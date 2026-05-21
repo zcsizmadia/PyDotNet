@@ -51,13 +51,14 @@ jobs:
       - name: Build
         shell: bash
         run: |
+          python -c "import sys; print('Python:', sys.version); import importlib.util; print('NumPy:', importlib.util.find_spec('numpy') is not None, 'Pandas:', importlib.util.find_spec('pandas') is not None)"
+          printenv
           dotnet restore
           dotnet build -c Release --no-restore
 
       - name: Test
         shell: bash
         run: |
-          printenv
           dotnet test -c Release --no-build --no-restore
 
       - name: Pack 
