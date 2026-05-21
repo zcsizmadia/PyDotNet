@@ -183,7 +183,16 @@ public static class PyRuntime
         }
 
         IsGilEnabled = DetectGilEnabled();
-        AppendSysPaths(options.AdditionalSysPaths);
+
+        // On Linux/macOS, embedded Python derives its home from argv[0] (the .NET host
+        // executable), so site.py may not add the site-packages of the actual Python
+        // installation.  Append site-packages discovered from the shared library path
+        // so that user-installed packages (numpy, pandas, etc.) are importable.
+        var autoSitePaths = DeriveDefaultSysPaths(libraryPath);
+        var allAdditionalPaths = autoSitePaths.Count > 0
+            ? [.. options.AdditionalSysPaths, .. autoSitePaths]
+            : options.AdditionalSysPaths;
+        AppendSysPaths(allAdditionalPaths);
 
         if (options.ReleaseGilAfterInit)
         {
@@ -211,6 +220,56 @@ public static class PyRuntime
         }
 
         _logger.AppendedSysPaths(paths.Count);
+    }
+
+    /// <summary>
+    /// On Linux/macOS, the Python shared library lives in <c>{home}/lib/</c>.
+    /// Returns the <c>site-packages</c> directories under that home so that
+    /// packages installed via pip are importable from embedded Python.
+    /// On Windows this is not needed because Python derives its home from the DLL location.
+    /// </summary>
+    private static List<string> DeriveDefaultSysPaths(string libraryPath)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return [];
+        }
+
+        // Library is typically at {home}/lib/libpython3.x.so — go up from "lib/"
+        var libDir = Path.GetDirectoryName(Path.GetFullPath(libraryPath)) ?? string.Empty;
+        var pythonHome = string.Equals(Path.GetFileName(libDir), "lib", StringComparison.OrdinalIgnoreCase)
+            ? Path.GetDirectoryName(libDir)
+            : libDir;
+
+        if (pythonHome is null)
+        {
+            return [];
+        }
+
+        var homeLib = Path.Combine(pythonHome, "lib");
+        if (!Directory.Exists(homeLib))
+        {
+            return [];
+        }
+
+        var result = new List<string>();
+        foreach (var dir in Directory.GetDirectories(homeLib, "python*"))
+        {
+            // Accept versioned dirs like "python3.14"; skip "python3" or "python-config"
+            var name = Path.GetFileName(dir);
+            if (!name["python".Length..].Contains('.'))
+            {
+                continue;
+            }
+
+            var sitePackages = Path.Combine(dir, "site-packages");
+            if (Directory.Exists(sitePackages))
+            {
+                result.Add(sitePackages);
+            }
+        }
+
+        return result;
     }
 
     private static bool DetectGilEnabled()
