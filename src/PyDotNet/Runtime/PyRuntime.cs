@@ -319,36 +319,49 @@ public static class PyRuntime
             return [];
         }
 
-        // Determine the Python installation home from the library directory.
+        // Derive the lib/ directory that contains python3.x/site-packages from the
+        // library path.  Three layouts are supported:
         //
-        // Standard layout:  {prefix}/lib/libpython3.x.so          → home = {prefix}
-        // Multiarch layout: {prefix}/lib/{arch}/libpython3.x.so   → home = {prefix}
-        //   (Debian/Ubuntu place the shared library in a multiarch subdirectory
-        //    such as /usr/lib/x86_64-linux-gnu/ rather than directly in /usr/lib/.)
+        //   Standard:   {prefix}/lib/libpython3.x.so|dylib
+        //                 → homeLib = {prefix}/lib
+        //
+        //   Multiarch:  {prefix}/lib/{arch}/libpython3.x.so   (Debian/Ubuntu)
+        //                 → homeLib = {prefix}/lib
+        //
+        //   Framework:  …/Python.framework/Versions/3.x/Python  (macOS)
+        //                 → homeLib = …/Versions/3.x/lib
+        //
         var libDir = Path.GetDirectoryName(Path.GetFullPath(libraryPath)) ?? string.Empty;
         var dirName = Path.GetFileName(libDir);
-        string? pythonHome;
+        string homeLib;
 
         if (string.Equals(dirName, "lib", StringComparison.OrdinalIgnoreCase))
         {
-            // Standard layout: go up one level.
-            pythonHome = Path.GetDirectoryName(libDir);
+            // Standard layout: the library is directly inside lib/.
+            homeLib = libDir;
         }
         else
         {
-            // Possible multiarch layout: check whether the *parent* is named "lib".
             var parent = Path.GetDirectoryName(libDir) ?? string.Empty;
-            pythonHome = string.Equals(Path.GetFileName(parent), "lib", StringComparison.OrdinalIgnoreCase)
-                ? Path.GetDirectoryName(parent)
-                : null; // unrecognised layout
+            var parentName = Path.GetFileName(parent);
+
+            if (string.Equals(parentName, "lib", StringComparison.OrdinalIgnoreCase))
+            {
+                // Multiarch layout: {prefix}/lib/{arch-tuple}/libpython3.x.so
+                homeLib = parent;
+            }
+            else if (string.Equals(parentName, "Versions", StringComparison.OrdinalIgnoreCase))
+            {
+                // macOS Framework layout: …/Python.framework/Versions/3.x/Python
+                // pip installs packages into …/Versions/3.x/lib/python3.x/site-packages/
+                homeLib = Path.Combine(libDir, "lib");
+            }
+            else
+            {
+                return []; // unrecognised layout
+            }
         }
 
-        if (pythonHome is null)
-        {
-            return [];
-        }
-
-        var homeLib = Path.Combine(pythonHome, "lib");
         if (!Directory.Exists(homeLib))
         {
             return [];

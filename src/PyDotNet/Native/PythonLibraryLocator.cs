@@ -55,9 +55,19 @@ public static class PythonLibraryLocator
             // over LDLIBRARY (the linker stub, e.g. libpython3.12.so), because the stub may
             // be absent in production images built without the -dev package.
             // Combine with LIBDIR only when the name is not already an absolute path.
-            : "import sysconfig, os; d=sysconfig.get_config_var('LIBDIR') or ''; " +
-              "f=sysconfig.get_config_var('INSTSONAME') or sysconfig.get_config_var('LDLIBRARY') or ''; " +
-              "print(os.path.join(d,f) if (d and f and not os.path.isabs(f)) else f)";
+            //
+            // Fallback for macOS framework builds (e.g. GitHub Actions hostedtoolcache Python
+            // 3.11-3.13): when the LIBDIR+LDLIBRARY path does not exist, resolve the running
+            // executable's real path and walk up two directories (bin/ → Versions/3.x/) to
+            // find the framework binary named 'Python' beside lib/ and bin/.
+            : "import sysconfig,os,sys;" +
+              "d=sysconfig.get_config_var('LIBDIR') or '';" +
+              "f=sysconfig.get_config_var('INSTSONAME') or sysconfig.get_config_var('LDLIBRARY') or '';" +
+              "lib=os.path.join(d,f) if (d and f and not os.path.isabs(f)) else f;" +
+              "p=os.path.dirname(os.path.dirname(os.path.realpath(sys.executable)));" +
+              "fw=os.path.join(p,'Python');" +
+              "lib=fw if (not lib or not os.path.exists(lib)) and os.path.exists(fw) else lib;" +
+              "print(lib)";
 
         // Prefer later Python versions; also try common absolute paths on Windows
         var exeCandidates = new List<string> { "python3", "python" };
