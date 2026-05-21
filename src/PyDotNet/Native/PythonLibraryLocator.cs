@@ -144,12 +144,11 @@ public static class PythonLibraryLocator
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
-            var dirs = new[]
-            {
-                "/usr/local/lib",
-                "/opt/homebrew/lib",
-                "/Library/Frameworks/Python.framework/Versions/Current/lib",
-            };
+            // Prefer the native architecture dir first: Homebrew on Apple Silicon
+            // lives in /opt/homebrew, while Intel Homebrew and pyenv use /usr/local.
+            List<string> dirs = RuntimeInformation.OSArchitecture == Architecture.Arm64
+                ? ["/opt/homebrew/lib", "/usr/local/lib", "/Library/Frameworks/Python.framework/Versions/Current/lib"]
+                : ["/usr/local/lib", "/opt/homebrew/lib", "/Library/Frameworks/Python.framework/Versions/Current/lib"];
 
             foreach (var dir in dirs)
             {
@@ -353,33 +352,52 @@ public static class PythonLibraryLocator
             return 0;
         }
 
+        // libpython3.12.dylib  /  libpython3.12.so.1.0
         var m = Regex.Match(Path.GetFileName(path), @"libpython3\.(?<v>\d+)");
-        return m.Success && int.TryParse(m.Groups["v"].Value, out var v) ? v : 0;
+        if (m.Success && int.TryParse(m.Groups["v"].Value, out var v))
+        {
+            return v;
+        }
+
+        // /Library/Frameworks/Python.framework/Versions/3.12/Python
+        m = Regex.Match(path, @"Versions[/\\]3\.(?<v>\d+)[/\\]");
+        return m.Success && int.TryParse(m.Groups["v"].Value, out v) ? v : 0;
     }
 
     private static string? LocateOnMacOs()
     {
-        var candidates = new[]
-        {
-            "/opt/homebrew/lib/libpython3.14.dylib",
-            "/opt/homebrew/lib/libpython3.13.dylib",
-            "/opt/homebrew/lib/libpython3.12.dylib",
-            "/opt/homebrew/lib/libpython3.11.dylib",
-            "/usr/local/lib/libpython3.14.dylib",
-            "/usr/local/lib/libpython3.13.dylib",
-            "/usr/local/lib/libpython3.12.dylib",
-            "/usr/local/lib/libpython3.11.dylib",
-            "/Library/Frameworks/Python.framework/Versions/3.14/Python",
-            "/Library/Frameworks/Python.framework/Versions/3.13/Python",
-            "/Library/Frameworks/Python.framework/Versions/3.12/Python",
-            "/Library/Frameworks/Python.framework/Versions/3.11/Python",
-        };
+        // Homebrew: Apple Silicon uses /opt/homebrew, Intel uses /usr/local.
+        // Search the native architecture directory first.
+        string[] brewDirs = RuntimeInformation.OSArchitecture == Architecture.Arm64
+            ? ["/opt/homebrew/lib", "/usr/local/lib"]
+            : ["/usr/local/lib", "/opt/homebrew/lib"];
 
-        foreach (var c in candidates)
+        foreach (var dir in brewDirs)
         {
-            if (File.Exists(c))
+            if (!Directory.Exists(dir))
             {
-                return c;
+                continue;
+            }
+
+            var best = Directory.EnumerateFiles(dir, "libpython3.*.dylib")
+                .MaxBy(ParsePythonMinorVersion);
+            if (best is not null)
+            {
+                return best;
+            }
+        }
+
+        // python.org framework installer: /Library/Frameworks/Python.framework/Versions/3.x/Python
+        const string frameworkBase = "/Library/Frameworks/Python.framework/Versions";
+        if (Directory.Exists(frameworkBase))
+        {
+            var best = Directory.EnumerateDirectories(frameworkBase, "3.*")
+                .Select(static d => Path.Combine(d, "Python"))
+                .Where(File.Exists)
+                .MaxBy(ParsePythonMinorVersion);
+            if (best is not null)
+            {
+                return best;
             }
         }
 
