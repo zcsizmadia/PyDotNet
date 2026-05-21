@@ -52,13 +52,13 @@ jobs:
           # which is more widely compatible and sufficient for our test suite. AVX2 builds are available but require more complex setup and have limited availability on CI runners.
           python -m pip install pandas polars-lts-cpu pyarrow
 
-          if [ "${{ matrix.nightly-numpy || ''}}" = "true" ]; then
+          #if [ "${{ matrix.nightly-numpy || ''}}" = "true" ]; then
             #python -m pip install meson ninja cython
             #python -m pip install numpy --no-binary :all:
             python -m pip install --pre --extra-index-url https://pypi.anaconda.org/scientific-python-nightly-wheels/simple numpy
-          else
-            python -m pip install numpy
-          fi
+          #else
+          #  python -m pip install numpy
+          #fi
 
       - name: Build
         shell: bash
