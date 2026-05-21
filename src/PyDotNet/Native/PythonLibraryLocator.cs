@@ -51,7 +51,12 @@ public static class PythonLibraryLocator
     {
         var script = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
             ? "import sysconfig, os; cfg=sysconfig.get_config_vars(); base=cfg.get('base',''); print(os.path.join(base,'python' + cfg.get('py_version_nodot','') + '.dll'))"
-            : "import sysconfig; print(sysconfig.get_config_var('LDLIBRARY') or '')";
+            // Combine LIBDIR (the install prefix's lib/ directory) with LDLIBRARY (the
+            // shared-library filename) to get an absolute path.  Using only LDLIBRARY
+            // returns just the filename on GitHub-hosted runners (hostedtoolcache), which
+            // causes DeriveDefaultSysPaths to fail because Path.GetFullPath of a plain
+            // filename resolves relative to cwd, not the Python installation.
+            : "import sysconfig, os; d = sysconfig.get_config_var('LIBDIR') or ''; f = sysconfig.get_config_var('LDLIBRARY') or ''; print(os.path.join(d, f) if d and f else f)";
 
         // Prefer later Python versions; also try common absolute paths on Windows
         var exeCandidates = new List<string> { "python3", "python" };
