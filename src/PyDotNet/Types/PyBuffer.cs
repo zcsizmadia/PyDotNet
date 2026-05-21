@@ -14,41 +14,38 @@ namespace PyDotNet.Types;
 /// </summary>
 public sealed unsafe class PyBuffer : IDisposable
 {
-    private PyBufferStruct _view;
+    private readonly PyBufferStruct* _view;
     private bool _released;
     private readonly PyObject _owner;
 
-    private PyBuffer(PyObject owner, PyBufferStruct view)
+    private PyBuffer(PyObject owner, PyBufferStruct* view)
     {
         _owner = owner;
         _view = view;
     }
 
     /// <summary>Total length of the buffer in bytes.</summary>
-    public long Length => _view.Len;
+    public long Length => _view->Len;
 
     /// <summary>Size in bytes of each element.</summary>
-    public int ItemSize => (int)_view.ItemSize;
+    public int ItemSize => (int)_view->ItemSize;
 
     /// <summary>Number of elements (<see cref="Length"/> / <see cref="ItemSize"/>).</summary>
     public long ElementCount => ItemSize > 0 ? Length / ItemSize : 0;
 
     /// <summary>Number of dimensions.</summary>
-    public int NDim => _view.NDim;
+    public int NDim => _view->NDim;
 
     /// <summary><see langword="true"/> if the underlying memory is read-only.</summary>
-    public bool IsReadOnly => _view.ReadOnly != 0;
+    public bool IsReadOnly => _view->ReadOnly != 0;
 
     /// <summary><see langword="true"/> if the buffer is C-contiguous (row-major, no gaps between elements).</summary>
-    public unsafe bool IsContiguous
+    public bool IsContiguous
     {
         get
         {
             EnsureNotReleased();
-            fixed (PyBufferStruct* ptr = &_view)
-            {
-                return NativeMethods.PyBuffer_IsContiguous(ptr, (byte)'C') != 0;
-            }
+            return NativeMethods.PyBuffer_IsContiguous(_view, (byte)'C') != 0;
         }
     }
 
@@ -66,7 +63,7 @@ public sealed unsafe class PyBuffer : IDisposable
     {
         EnsureNotReleased();
 
-        if (_view.Buf is null)
+        if (_view->Buf is null)
         {
             throw new InvalidOperationException("Buffer pointer is null.");
         }
@@ -86,7 +83,7 @@ public sealed unsafe class PyBuffer : IDisposable
         }
 
         var elementCount = sizeof(T) > 0 ? (int)(Length / sizeof(T)) : 0;
-        return new Span<T>(_view.Buf, elementCount);
+        return new Span<T>(_view->Buf, elementCount);
     }
 
     /// <summary>
@@ -131,7 +128,7 @@ public sealed unsafe class PyBuffer : IDisposable
             throw new ArgumentOutOfRangeException(nameof(dim));
         }
 
-        return _view.Shape is not null ? (long)_view.Shape[dim] : Length;
+        return _view->Shape is not null ? (long)_view->Shape[dim] : Length;
     }
 
     /// <summary>
@@ -146,7 +143,7 @@ public sealed unsafe class PyBuffer : IDisposable
             throw new ArgumentOutOfRangeException(nameof(dim));
         }
 
-        return _view.Strides is not null ? (long)_view.Strides[dim] : ItemSize;
+        return _view->Strides is not null ? (long)_view->Strides[dim] : ItemSize;
     }
 
     /// <summary>
@@ -187,8 +184,8 @@ public sealed unsafe class PyBuffer : IDisposable
         get
         {
             EnsureNotReleased();
-            return _view.Format is not null
-                ? Marshal.PtrToStringAnsi((IntPtr)_view.Format)
+            return _view->Format is not null
+                ? Marshal.PtrToStringAnsi((IntPtr)_view->Format)
                 : null;
         }
     }
@@ -203,7 +200,8 @@ public sealed unsafe class PyBuffer : IDisposable
 
         _released = true;
         using var gil = new GilScope();
-        NativeMethods.PyBuffer_Release(ref _view);
+        NativeMethods.PyBuffer_Release(_view);
+        NativeMemory.Free(_view);
     }
 
     // ── Factory ───────────────────────────────────────────────────────────
@@ -216,11 +214,14 @@ public sealed unsafe class PyBuffer : IDisposable
             ? PyConstants.PyBufFull
             : PyConstants.PyBufFullRo;
 
-        var view = default(PyBufferStruct);
-        var rc = NativeMethods.PyObject_GetBuffer(owner.Handle, ref view, flags);
+        // Allocate on the unmanaged heap so interior pointers written by PyBuffer_FillInfo
+        // (shape = &view->len, strides = &view->itemsize) remain valid for the buffer's lifetime.
+        var view = (PyBufferStruct*)NativeMemory.AllocZeroed((nuint)sizeof(PyBufferStruct));
+        var rc = NativeMethods.PyObject_GetBuffer(owner.Handle, view, flags);
 
         if (rc != 0)
         {
+            NativeMemory.Free(view);
             PythonException.ThrowIfPythonErrorOccurred();
             throw new PyInteropException("Failed to acquire Python buffer.");
         }
@@ -254,7 +255,7 @@ public sealed unsafe class PyBuffer : IDisposable
         {
             _buffer.EnsureNotReleased();
 
-            var ptr = (T*)_buffer._view.Buf + elementIndex;
+            var ptr = (T*)_buffer._view->Buf + elementIndex;
             return new MemoryHandle(ptr);
         }
 

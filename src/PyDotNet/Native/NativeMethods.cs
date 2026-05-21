@@ -113,10 +113,10 @@ internal static partial class NativeMethods
     internal static extern int PyCallable_Check(IntPtr obj);
 
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    internal static extern int PyObject_GetBuffer(IntPtr obj, ref PyBufferStruct view, int flags);
+    internal static extern unsafe int PyObject_GetBuffer(IntPtr obj, PyBufferStruct* view, int flags);
 
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    internal static extern void PyBuffer_Release(ref PyBufferStruct view);
+    internal static extern unsafe void PyBuffer_Release(PyBufferStruct* view);
 
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern unsafe int PyBuffer_IsContiguous(PyBufferStruct* view, byte order);
