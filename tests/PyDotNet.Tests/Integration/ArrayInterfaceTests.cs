@@ -22,14 +22,8 @@ public sealed class ArrayInterfaceTests
         await PythonEnvironment.SkipIfUnavailableAsync();
 
         using var probe = PyRuntime.CreateInterpreter();
-        try
-        {
-            probe.ImportModule("numpy").Dispose();
-        }
-        catch
-        {
-            Skip.Test("numpy is not installed — skipping ArrayInterface tests.");
-        }
+        
+        probe.ImportModule("numpy").Dispose();
 
         return PyRuntime.CreateInterpreter();
     }

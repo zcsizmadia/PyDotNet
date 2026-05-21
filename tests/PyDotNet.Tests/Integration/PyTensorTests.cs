@@ -29,15 +29,9 @@ public sealed class PyTensorTests
         await PythonEnvironment.SkipIfUnavailableAsync();
 
         using var probe = PyRuntime.CreateInterpreter();
-        try
-        {
-            probe.ImportModule("numpy").Dispose();
-        }
-        catch
-        {
-            Skip.Test("numpy is not installed — skipping tensor tests.");
-        }
-
+        
+        probe.ImportModule("numpy").Dispose();
+        
         return PyRuntime.CreateInterpreter();
     }
 

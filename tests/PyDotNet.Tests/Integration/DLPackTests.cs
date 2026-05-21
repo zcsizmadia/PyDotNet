@@ -24,14 +24,8 @@ public sealed class DLPackTests
         await PythonEnvironment.SkipIfUnavailableAsync();
 
         using var probe = PyRuntime.CreateInterpreter();
-        try
-        {
-            probe.ImportModule("numpy").Dispose();
-        }
-        catch
-        {
-            Skip.Test("numpy is not installed — skipping DLPack tests.");
-        }
+        
+        probe.ImportModule("numpy").Dispose();
 
         return PyRuntime.CreateInterpreter();
     }
