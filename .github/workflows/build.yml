@@ -21,7 +21,7 @@ jobs:
         include:
           - os: ubuntu-latest
             python-version: '3.14'
-            nightly-numpy: true
+            #nightly-numpy: true
             pack-nupkg: true
 
     runs-on: ${{ matrix.os }}
@@ -49,16 +49,16 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           #if [ "${{ matrix.nightly-numpy || ''}}" = "true" ]; then
-            #python -m pip install meson ninja cython
-            #python -m pip install numpy --no-binary :all:
-            python -m pip install --pre --extra-index-url https://pypi.anaconda.org/scientific-python-nightly-wheels/simple numpy
+          #  #python -m pip install meson ninja cython
+          #  #python -m pip install numpy --no-binary :all:
+          #  python -m pip install --pre --extra-index-url https://pypi.anaconda.org/scientific-python-nightly-wheels/simple numpy
           #else
           #  python -m pip install numpy
           #fi
 
           # Install polars-lts-cpu for non AVX2 environments,
           # which is more widely compatible and sufficient for our test suite. AVX2 builds are available but require more complex setup and have limited availability on CI runners.
-          python -m pip install pandas polars-lts-cpu pyarrow
+          python -m pip install numpy pandas polars-lts-cpu pyarrow
 
       - name: Build
         shell: bash

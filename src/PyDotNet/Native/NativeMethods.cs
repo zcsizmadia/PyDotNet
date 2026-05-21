@@ -367,4 +367,5 @@ internal static partial class NativeMethods
 
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern IntPtr Py_GetVersion();
+
 }

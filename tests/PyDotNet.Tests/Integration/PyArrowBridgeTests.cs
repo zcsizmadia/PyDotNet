@@ -1,3 +1,5 @@
+using System.Globalization;
+
 using PyDotNet.DataFrames;
 using PyDotNet.Runtime;
 using PyDotNet.Tests.Infrastructure;
@@ -15,13 +17,23 @@ public sealed class PyArrowBridgeTests
         await PythonEnvironment.SkipIfUnavailableAsync();
 
         using var probe = PyRuntime.CreateInterpreter();
+        
+        probe.ImportModule("pandas").Dispose();
+
+        // __arrow_c_stream__ was added to pandas.DataFrame in pandas 3.0.
+        // Older versions expose only the interchange protocol (__dataframe__).
+        using var versionProbe = PyRuntime.CreateInterpreter();
+        var majorVersion = 0;
         try
         {
-            probe.ImportModule("pandas").Dispose();
+            using var ver = versionProbe.Evaluate("__import__('pandas').__version__.split('.')[0]");
+            majorVersion = int.Parse(ver.As<string>(), CultureInfo.InvariantCulture);
         }
-        catch
+        catch { /* fall through — version unreadable, let the test run */ }
+
+        if (majorVersion is > 0 and < 3)
         {
-            Skip.Test("pandas is not installed — skipping Arrow bridge tests.");
+            Skip.Test($"pandas {majorVersion}.x does not expose __arrow_c_stream__ on DataFrame (requires pandas ≥3.0).");
         }
 
         return PyRuntime.CreateInterpreter();
@@ -32,16 +44,9 @@ public sealed class PyArrowBridgeTests
         var interp = await CreatePandasInterpreterAsync();
 
         // TryExportStream invokes __arrow_c_stream__() which requires pyarrow
-        using var probe2 = PyRuntime.CreateInterpreter();
-        try
-        {
-            probe2.ImportModule("pyarrow").Dispose();
-        }
-        catch
-        {
-            interp.Dispose();
-            Skip.Test("pyarrow is not installed — skipping TryExportStream tests.");
-        }
+        using var probe = PyRuntime.CreateInterpreter();
+
+        probe.ImportModule("pyarrow").Dispose();
 
         return interp;
     }

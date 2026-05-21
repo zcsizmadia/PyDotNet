@@ -177,6 +177,15 @@ public static class PyRuntime
         // redirected to the real versioned shared library.
         _nativeLibraryHandle = NativeLibrary.Load(libraryPath);
 
+        // On Linux, NativeLibrary.Load uses RTLD_LOCAL which prevents Python's
+        // symbols from being visible to subsequently dlopen'd shared libraries.
+        // Python C extension modules (numpy, pandas, scipy, etc.) are linked
+        // against libpython and require its symbols to be globally visible.
+        // Re-opening with RTLD_GLOBAL promotes visibility without unloading it.
+        // On macOS, Python extensions use -undefined dynamic_lookup, so this is
+        // not required.  On Windows the PE loader handles visibility differently.
+        ReopenWithRtldGlobal(libraryPath);
+
         // SetDllImportResolver can only be called once per assembly.
         // Guard against re-initialization after Shutdown (e.g. in test suites).
         // CompareExchange returns the original value; 0 means we won the race.
@@ -238,6 +247,66 @@ public static class PyRuntime
     }
 
     /// <summary>
+    /// On Linux, re-opens the already-loaded Python library with <c>RTLD_GLOBAL</c>
+    /// so that its symbols are visible to C extension modules (numpy, pandas, etc.)
+    /// that are loaded later via <c>dlopen</c>.
+    /// <para>
+    /// <c>NativeLibrary.Load</c> uses <c>RTLD_LOCAL</c> on all Unix platforms.
+    /// Without <c>RTLD_GLOBAL</c>, extension <c>.so</c> files that link against
+    /// <c>libpython</c> fail to resolve symbols and numpy raises the misleading
+    /// "you should not try to import numpy from its source directory" error.
+    /// </para>
+    /// <para>
+    /// On macOS, Python extensions are built with <c>-undefined dynamic_lookup</c>
+    /// so they resolve symbols lazily from the running process — <c>RTLD_GLOBAL</c>
+    /// is not required.  On Windows the PE loader uses explicit import tables and
+    /// has no equivalent concept.
+    /// </para>
+    /// <para>
+    /// <c>dlopen</c> is resolved dynamically at runtime (trying <c>libdl.so.2</c>,
+    /// <c>libdl.so</c>, then <c>libc.so.6</c>) so that no platform-specific
+    /// <c>[DllImport]</c> is baked into the source.  The extra handle returned by
+    /// <c>dlopen</c> is intentionally not stored — the library stays loaded for the
+    /// lifetime of the process, which is the correct behaviour for an embedded runtime.
+    /// </para>
+    /// </summary>
+    private static void ReopenWithRtldGlobal(string libraryPath)
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        // Resolve dlopen from the platform's dynamic-linker library.
+        // On glibc < 2.34 dlopen lives in libdl.so.2; on glibc >= 2.34 it moved
+        // into libc.so.6, but libdl.so.2 still exists as a stub for ABI compat.
+        IntPtr dlopenPtr = IntPtr.Zero;
+        foreach (var lib in new[] { "libdl.so.2", "libdl.so", "libc.so.6" })
+        {
+            if (NativeLibrary.TryLoad(lib, out var libHandle) &&
+                NativeLibrary.TryGetExport(libHandle, "dlopen", out dlopenPtr))
+            {
+                break;
+            }
+        }
+
+        if (dlopenPtr == IntPtr.Zero)
+        {
+            return; // best-effort: skip if dlopen cannot be found
+        }
+
+        const int RTLD_NOW    = 0x0002;
+        const int RTLD_GLOBAL = 0x0100;
+
+        // Use Marshal to avoid unsafe code while still calling via function pointer.
+        var dlopen = Marshal.GetDelegateForFunctionPointer<DlOpenDelegate>(dlopenPtr);
+        dlopen(libraryPath, RTLD_NOW | RTLD_GLOBAL);
+    }
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate IntPtr DlOpenDelegate([MarshalAs(UnmanagedType.LPStr)] string? path, int flags);
+
+    /// <summary>
     /// On Linux/macOS, the Python shared library lives in <c>{home}/lib/</c>.
     /// Returns the <c>site-packages</c> directories under that home so that
     /// packages installed via pip are importable from embedded Python.
@@ -250,11 +319,29 @@ public static class PyRuntime
             return [];
         }
 
-        // Library is typically at {home}/lib/libpython3.x.so — go up from "lib/"
+        // Determine the Python installation home from the library directory.
+        //
+        // Standard layout:  {prefix}/lib/libpython3.x.so          → home = {prefix}
+        // Multiarch layout: {prefix}/lib/{arch}/libpython3.x.so   → home = {prefix}
+        //   (Debian/Ubuntu place the shared library in a multiarch subdirectory
+        //    such as /usr/lib/x86_64-linux-gnu/ rather than directly in /usr/lib/.)
         var libDir = Path.GetDirectoryName(Path.GetFullPath(libraryPath)) ?? string.Empty;
-        var pythonHome = string.Equals(Path.GetFileName(libDir), "lib", StringComparison.OrdinalIgnoreCase)
-            ? Path.GetDirectoryName(libDir)
-            : libDir;
+        var dirName = Path.GetFileName(libDir);
+        string? pythonHome;
+
+        if (string.Equals(dirName, "lib", StringComparison.OrdinalIgnoreCase))
+        {
+            // Standard layout: go up one level.
+            pythonHome = Path.GetDirectoryName(libDir);
+        }
+        else
+        {
+            // Possible multiarch layout: check whether the *parent* is named "lib".
+            var parent = Path.GetDirectoryName(libDir) ?? string.Empty;
+            pythonHome = string.Equals(Path.GetFileName(parent), "lib", StringComparison.OrdinalIgnoreCase)
+                ? Path.GetDirectoryName(parent)
+                : null; // unrecognised layout
+        }
 
         if (pythonHome is null)
         {
@@ -270,17 +357,22 @@ public static class PyRuntime
         var result = new List<string>();
         foreach (var dir in Directory.GetDirectories(homeLib, "python*"))
         {
-            // Accept versioned dirs like "python3.14"; skip "python3" or "python-config"
+            // Accept versioned dirs like "python3.14"; skip unversioned "python3" or "python-config".
             var name = Path.GetFileName(dir);
             if (!name["python".Length..].Contains('.'))
             {
                 continue;
             }
 
-            var sitePackages = Path.Combine(dir, "site-packages");
-            if (Directory.Exists(sitePackages))
+            // Debian/Ubuntu use "dist-packages" instead of "site-packages";
+            // add both so the function works across all distros.
+            foreach (var subDir in new[] { "site-packages", "dist-packages" })
             {
-                result.Add(sitePackages);
+                var packagesDir = Path.Combine(dir, subDir);
+                if (Directory.Exists(packagesDir))
+                {
+                    result.Add(packagesDir);
+                }
             }
         }
 

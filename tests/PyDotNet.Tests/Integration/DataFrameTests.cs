@@ -15,14 +15,8 @@ public sealed class DataFrameTests
         await PythonEnvironment.SkipIfUnavailableAsync();
 
         using var probe = PyRuntime.CreateInterpreter();
-        try
-        {
-            probe.ImportModule("pandas").Dispose();
-        }
-        catch
-        {
-            Skip.Test("pandas is not installed — skipping DataFrame tests.");
-        }
+
+        probe.ImportModule("pandas").Dispose();
 
         return PyRuntime.CreateInterpreter();
     }

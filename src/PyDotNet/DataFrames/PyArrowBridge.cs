@@ -13,7 +13,7 @@ namespace PyDotNet.DataFrames;
 /// <remarks>
 /// Supported objects:
 /// <list type="bullet">
-///   <item>Any object with <c>__arrow_c_stream__()</c> (Pandas ≥2.0, Polars, PyArrow ≥14.0)</item>
+///   <item>Any object with <c>__arrow_c_stream__()</c> (Pandas ≥3.0, Polars, PyArrow ≥14.0)</item>
 ///   <item>PyArrow <c>RecordBatch</c> / <c>Table</c> via <c>_export_to_c(array_ptr, schema_ptr)</c></item>
 /// </list>
 /// </remarks>
