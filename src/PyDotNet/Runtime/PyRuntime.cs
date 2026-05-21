@@ -1,0 +1,270 @@
+using System.Reflection;
+using System.Runtime.InteropServices;
+
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+
+using PyDotNet.Exceptions;
+using PyDotNet.Native;
+using PyDotNet.Types;
+
+namespace PyDotNet.Runtime;
+
+/// <summary>
+/// Entry point for the PyDotNet runtime. Handles initialization, shutdown,
+/// and interpreter lifecycle.
+/// </summary>
+public static class PyRuntime
+{
+    private static readonly object _lock = new();
+    private static volatile bool _initialized;
+    private static IntPtr _mainThreadState;
+    private static PyRuntimeOptions _options = new();
+    private static ILogger _logger = NullLogger.Instance;
+    private static IntPtr _nativeLibraryHandle;
+
+    /// <summary>Gets a value indicating whether the runtime has been initialized.</summary>
+    public static bool IsInitialized => _initialized;
+
+    /// <summary>
+    /// Gets a value indicating whether the Python GIL is enabled.
+    /// Returns <see langword="false"/> on Python 3.13+ free-threaded builds (no-GIL mode).
+    /// </summary>
+    public static bool IsGilEnabled { get; private set; } = true;
+
+    /// <summary>
+    /// Configures the runtime logger. Must be called before <see cref="Initialize()"/>.
+    /// </summary>
+    public static void SetLogger(ILogger logger)
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// Initializes the PyDotNet runtime with default options.
+    /// This method is idempotent — calling it multiple times is safe.
+    /// </summary>
+    public static void Initialize()
+    {
+        Initialize(new PyRuntimeOptions());
+    }
+
+    /// <summary>
+    /// Initializes the PyDotNet runtime with the supplied options.
+    /// This method is idempotent — calling it multiple times with the same configuration is safe.
+    /// </summary>
+    public static void Initialize(PyRuntimeOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
+
+        if (_initialized)
+        {
+            return;
+        }
+
+        lock (_lock)
+        {
+            if (_initialized)
+            {
+                return;
+            }
+
+            _options = options;
+            InitializeCore(options);
+            _initialized = true;
+        }
+    }
+
+    /// <summary>
+    /// Shuts down the Python runtime and releases all resources.
+    /// After this call, <see cref="Initialize()"/> can be called again.
+    /// </summary>
+    public static void Shutdown()
+    {
+        if (!_initialized)
+        {
+            return;
+        }
+
+        lock (_lock)
+        {
+            if (!_initialized)
+            {
+                return;
+            }
+
+            _logger.ShuttingDown();
+
+            // Restore the main thread state before calling Py_Finalize
+            if (_mainThreadState != IntPtr.Zero)
+            {
+                NativeMethods.PyEval_RestoreThread(_mainThreadState);
+                _mainThreadState = IntPtr.Zero;
+            }
+
+            // Release all live Python object handles while GIL is held, before Py_Finalize.
+            // This prevents finalizer crashes when .NET GC runs after Python is torn down.
+            PyObjectRegistry.ClearAll();
+
+            NativeMethods.Py_Finalize();
+            _initialized = false;
+
+            if (_nativeLibraryHandle != IntPtr.Zero)
+            {
+                NativeLibrary.Free(_nativeLibraryHandle);
+                _nativeLibraryHandle = IntPtr.Zero;
+            }
+
+            _logger.ShutDown();
+        }
+    }
+
+    /// <summary>
+    /// Creates a new <see cref="PyInterpreter"/> from the global runtime.
+    /// The caller is responsible for disposing the interpreter.
+    /// </summary>
+    public static PyInterpreter CreateInterpreter()
+    {
+        EnsureInitialized();
+        return new PyInterpreter(_logger);
+    }
+
+    // ── Internal helpers ──────────────────────────────────────────────────
+
+    internal static void EnsureInitialized()
+    {
+        if (!_initialized)
+        {
+            throw new PyRuntimeException(
+                "PyDotNet runtime is not initialized. Call PyRuntime.Initialize() first.");
+        }
+    }
+
+    // 0 = not set, 1 = set. Uses Interlocked.CompareExchange so the resolver is
+    // registered exactly once per process, even if Initialize/Shutdown cycle runs
+    // concurrently on multiple threads.
+    private static int _resolverSet;
+
+    private static void InitializeCore(PyRuntimeOptions options)
+    {
+        var libraryPath = options.PythonLibraryPath
+            ?? PythonLibraryLocator.LibraryPath
+            ?? throw new PyRuntimeException(
+                "Could not locate the Python shared library. " +
+                "Set the PYDOTNET_PYTHON_LIBRARY environment variable or supply " +
+                "PyRuntimeOptions.PythonLibraryPath explicitly.");
+
+        _logger.LoadingPythonLibrary(libraryPath);
+
+        // Register the DLL import resolver so that [DllImport("python")] is
+        // redirected to the real versioned shared library.
+        _nativeLibraryHandle = NativeLibrary.Load(libraryPath);
+
+        // SetDllImportResolver can only be called once per assembly.
+        // Guard against re-initialization after Shutdown (e.g. in test suites).
+        // CompareExchange returns the original value; 0 means we won the race.
+        if (Interlocked.CompareExchange(ref _resolverSet, 1, 0) == 0)
+        {
+            NativeLibrary.SetDllImportResolver(
+                typeof(NativeMethods).Assembly,
+                (name, _, _) => name == NativeMethods.PythonDll ? _nativeLibraryHandle : IntPtr.Zero);
+        }
+
+        if (NativeMethods.Py_IsInitialized() == 0)
+        {
+            NativeMethods.Py_Initialize();
+            _logger.PyInitializeCalled();
+        }
+        else
+        {
+            _logger.PythonAlreadyInitialized();
+        }
+
+        IsGilEnabled = DetectGilEnabled();
+        AppendSysPaths(options.AdditionalSysPaths);
+
+        if (options.ReleaseGilAfterInit)
+        {
+            // Release the GIL so .NET thread-pool threads can acquire it freely.
+            _mainThreadState = NativeMethods.PyEval_SaveThread();
+            _logger.GilReleasedAfterInit();
+        }
+    }
+
+    private static void AppendSysPaths(IReadOnlyList<string> paths)
+    {
+        if (paths.Count == 0)
+        {
+            return;
+        }
+
+        using var gil = new GilScope();
+
+        var sysPaths = NativeMethods.PySys_GetObject("path"); // borrowed ref
+        foreach (var path in paths)
+        {
+            var pyPath = NativeMethods.PyUnicode_FromString(path);
+            _ = NativeMethods.PyList_Append(sysPaths, pyPath);
+            NativeMethods.Py_DecRef(pyPath);
+        }
+
+        _logger.AppendedSysPaths(paths.Count);
+    }
+
+    private static bool DetectGilEnabled()
+    {
+        // sys._is_gil_enabled() exists only in CPython 3.13+ free-threaded builds.
+        // On all earlier versions (and standard 3.13 builds) the GIL is always enabled.
+        using var gil = new GilScope();
+        var sys = NativeMethods.PyImport_ImportModule("sys");
+        if (sys == IntPtr.Zero)
+        {
+            NativeMethods.PyErr_Clear();
+            return true; // assume GIL present if we can't check
+        }
+
+        try
+        {
+            if (NativeMethods.PyObject_HasAttrString(sys, "_is_gil_enabled") == 0)
+            {
+                return true; // attribute absent → older Python, GIL always on
+            }
+
+            var fn = NativeMethods.PyObject_GetAttrString(sys, "_is_gil_enabled");
+            if (fn == IntPtr.Zero)
+            {
+                NativeMethods.PyErr_Clear();
+                return true;
+            }
+
+            try
+            {
+                var result = NativeMethods.PyObject_CallObject(fn, IntPtr.Zero);
+                if (result == IntPtr.Zero)
+                {
+                    NativeMethods.PyErr_Clear();
+                    return true;
+                }
+
+                try
+                {
+                    return NativeMethods.PyObject_IsTrue(result) != 0;
+                }
+                finally
+                {
+                    NativeMethods.Py_DecRef(result);
+                }
+            }
+            finally
+            {
+                NativeMethods.Py_DecRef(fn);
+            }
+        }
+        finally
+        {
+            NativeMethods.Py_DecRef(sys);
+        }
+    }
+}

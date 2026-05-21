@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false  # Don't cancel releases in progress
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    name: Release
+    # This ensures the job only runs if the tag was created from the main branch
+    if: github.event.release.target_commitish == 'main' || github.ref == 'refs/heads/main'
+    permissions:
+      actions: read     # To download from build.yml
+      contents: write   # To upload assets to the Release
+      packages: write   # To push to GitHub Packages
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install .NET SDKs
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            10.0.x
+
+      - name: Download nuget packages from build workflow
+        uses: dawidd6/action-download-artifact@v21
+        with:
+          workflow: build.yml
+          workflow_conclusion: success
+          branch: main             # Strictly target the main branch
+          name: nuget-packages
+          path: ./nupkgs
+          check_artifacts: true    # Ensures the workflow actually has the named artifact
+          search_artifacts: true   # Finds the latest run that actually contains this artifact
+
+      - name: Check nupkg version
+        shell: bash
+        run: |
+          # Get version from the tag (stripping 'v' prefix if present)
+          TAG_VERSION="${{ github.event.release.tag_name }}"
+          TAG_VERSION="${TAG_VERSION#v}"
+
+          echo "Validating version: $TAG_VERSION"
+
+          # Extract version from csproj
+          PROJECT_VERSION="$(dotnet msbuild src/PyDotNet/ -getProperty:Version -nologo -v:q | tr -d '\r' | xargs)"
+
+          # Check if the tag version matches the project version
+          if [[ "$TAG_VERSION" != "$PROJECT_VERSION" ]]; then
+            echo "::error::Version mismatch! Tag ($TAG_VERSION) != Project ($PROJECT_VERSION)"
+            exit 1
+          fi
+
+          # Path to the specific nupkg we want
+          TARGET_NUPKGS="PyDotNet"
+
+          # Verify .nupkg exists for every package
+          for NUPKG in $TARGET_NUPKGS; do
+            NUPKG_FILE="./nupkgs/$NUPKG.$TAG_VERSION.nupkg"
+            if [[ ! -f "$NUPKG_FILE" ]]; then
+              echo "::error::Could not find $NUPKG_FILE in downloaded artifacts"
+              exit 1
+            fi
+          done
+
+          # Export variables for later steps
+          echo "TARGET_NUPKGS=$TARGET_NUPKGS" >> $GITHUB_ENV
+          echo "TAG_VERSION=$TAG_VERSION" >> $GITHUB_ENV
+
+      - name: Attach Assets to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for NUPKG in $TARGET_NUPKGS; do
+            gh release upload ${{ github.event.release.tag_name }} "./nupkgs/$NUPKG.$TAG_VERSION.nupkg" --clobber
+          done
+
+      - name: Publish to NuGet.org
+        shell: bash
+        run: |
+          for NUPKG in $TARGET_NUPKGS; do
+            dotnet nuget push "./nupkgs/$NUPKG.$TAG_VERSION.nupkg" \
+              --api-key "${{ secrets.NUGET_API_KEY }}" \
+              --source https://api.nuget.org/v3/index.json \
+              --skip-duplicate
+          done
+
+      - name: Publish to GitHub Packages
+        run: |
+          for NUPKG in $TARGET_NUPKGS; do
+            dotnet nuget push "./nupkgs/$NUPKG.$TAG_VERSION.nupkg" \
+              --api-key "${{ secrets.GITHUB_TOKEN }}" \
+              --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
+              --skip-duplicate
+          done

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>$(DefaultTargetFramework)</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>PyDotNet.Benchmarks</RootNamespace>
+    <AssemblyName>PyDotNet.Benchmarks</AssemblyName>
+    <Description>Performance benchmarks for PyDotNet — no BenchmarkDotNet dependency.</Description>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/PyDotNet/PyDotNet.csproj" />
+  </ItemGroup>
+
+</Project>
