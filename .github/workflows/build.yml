@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ['3.11', '3.12', '3.13', '3.14']
 
         include:
@@ -53,8 +53,6 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          python -c "import sys; print('Python:', sys.version); import importlib.util; print('NumPy:', importlib.util.find_spec('numpy') is not None, 'Pandas:', importlib.util.find_spec('pandas') is not None)"
-          printenv
           dotnet restore
           dotnet build -c Release --no-restore
 
