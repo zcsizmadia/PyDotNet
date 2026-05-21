@@ -97,18 +97,33 @@ public static class PyRuntime
 
             _logger.ShuttingDown();
 
-            // Restore the main thread state before calling Py_Finalize
-            if (_mainThreadState != IntPtr.Zero)
-            {
-                NativeMethods.PyEval_RestoreThread(_mainThreadState);
-                _mainThreadState = IntPtr.Zero;
-            }
+            // Use PyGILState_Ensure rather than PyEval_RestoreThread so that
+            // Shutdown() works correctly regardless of which thread calls it.
+            // (Shutdown() is invoked via Task.Run on a thread-pool thread — not
+            // necessarily the thread that called Initialize() and saved
+            // _mainThreadState.)
+            var gilState = NativeMethods.PyGILState_Ensure();
 
-            // Release all live Python object handles while GIL is held, before Py_Finalize.
-            // This prevents finalizer crashes when .NET GC runs after Python is torn down.
+            // Release all live Python object handles while the GIL is held.
+            // ForceReleaseHandle() calls GC.SuppressFinalize on every object, so
+            // no .NET finalizers will later try to call Py_DecRef after we free
+            // the native library.
             PyObjectRegistry.ClearAll();
 
-            NativeMethods.Py_Finalize();
+            NativeMethods.PyGILState_Release(gilState);
+            _mainThreadState = IntPtr.Zero;
+
+            // Py_Finalize() is intentionally skipped.
+            //
+            // On Python 3.13+ the internal stop-the-world GC that runs inside
+            // Py_Finalize() calls _PyThreadState_Attach on the current thread.
+            // Because we have already attached a thread state via
+            // PyEval_RestoreThread (or PyGILState_Ensure), that second attach
+            // triggers the fatal error:
+            //   "Fatal Python error: _PyThreadState_Attach: non-NULL old thread state"
+            //
+            // Shutdown() is called during test/process teardown, so OS-level
+            // cleanup of the remaining Python runtime state is sufficient.
             _initialized = false;
 
             if (_nativeLibraryHandle != IntPtr.Zero)
