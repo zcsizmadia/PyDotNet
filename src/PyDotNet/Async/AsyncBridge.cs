@@ -46,9 +46,7 @@ internal static class AsyncBridge
             throw new PyInteropException("Python callable returned null when constructing coroutine.");
         }
 
-        // 2. Import asyncio and run the coroutine via asyncio.run().
-        //    asyncio.run() creates a new event loop, runs the coroutine to completion,
-        //    closes the loop, and returns the result.
+        // 2. Import asyncio.
         var asyncioModule = NativeMethods.PyImport_ImportModule("asyncio");
         if (asyncioModule == IntPtr.Zero)
         {
@@ -57,53 +55,101 @@ internal static class AsyncBridge
             throw new PyInteropException("Failed to import 'asyncio'.");
         }
 
+        // We use new_event_loop() + run_until_complete() + close() instead of
+        // asyncio.run() to avoid asyncio.Runner.close() calling
+        // signal.set_wakeup_fd(-1) without a thread guard (Python ≤ 3.12).
+        // All TUnit tests run on thread-pool threads, which are never the main
+        // thread, so asyncio.run() raises ValueError on those Python versions.
+        IntPtr loop = IntPtr.Zero;
         try
         {
-            var runFunc = NativeMethods.PyObject_GetAttrString(asyncioModule, "run");
-            if (runFunc == IntPtr.Zero)
+            // 3. Create a fresh event loop: asyncio.new_event_loop()
+            var newLoopFunc = NativeMethods.PyObject_GetAttrString(asyncioModule, "new_event_loop");
+            if (newLoopFunc == IntPtr.Zero)
             {
                 NativeMethods.Py_DecRef(coroutine);
                 PythonException.ThrowIfPythonErrorOccurred();
-                throw new PyInteropException("asyncio.run not found.");
+                throw new PyInteropException("asyncio.new_event_loop not found.");
             }
 
             try
             {
-                // asyncio.run(coroutine) — build a 1-element tuple
+                var noArgs = NativeMethods.PyTuple_New(0);
+                loop = NativeMethods.PyObject_CallObject(newLoopFunc, noArgs);
+                NativeMethods.Py_DecRef(noArgs);
+            }
+            finally
+            {
+                NativeMethods.Py_DecRef(newLoopFunc);
+            }
+
+            if (loop == IntPtr.Zero)
+            {
+                NativeMethods.Py_DecRef(coroutine);
+                PythonException.ThrowIfPythonErrorOccurred();
+                throw new PyInteropException("asyncio.new_event_loop() returned null.");
+            }
+
+            // 4. Call loop.run_until_complete(coroutine)
+            var runFunc = NativeMethods.PyObject_GetAttrString(loop, "run_until_complete");
+            if (runFunc == IntPtr.Zero)
+            {
+                NativeMethods.Py_DecRef(coroutine);
+                PythonException.ThrowIfPythonErrorOccurred();
+                throw new PyInteropException("loop.run_until_complete not found.");
+            }
+
+            IntPtr pyResult;
+            try
+            {
+                // PyTuple_SetItem steals the coroutine reference.
                 var runArgs = NativeMethods.PyTuple_New(1);
-                // PyTuple_SetItem steals the coroutine reference
                 _ = NativeMethods.PyTuple_SetItem(runArgs, 0, coroutine);
-
-                var pyResult = NativeMethods.PyObject_CallObject(runFunc, runArgs);
+                pyResult = NativeMethods.PyObject_CallObject(runFunc, runArgs);
                 NativeMethods.Py_DecRef(runArgs);
-
-                if (pyResult == IntPtr.Zero)
-                {
-                    PythonException.ThrowIfPythonErrorOccurred();
-                    throw new PyInteropException("asyncio.run() returned null.");
-                }
-
-                try
-                {
-                    if (typeof(T) == typeof(object))
-                    {
-                        return default!;
-                    }
-
-                    return TypeConverter.FromPython<T>(pyResult);
-                }
-                finally
-                {
-                    NativeMethods.Py_DecRef(pyResult);
-                }
             }
             finally
             {
                 NativeMethods.Py_DecRef(runFunc);
             }
+
+            if (pyResult == IntPtr.Zero)
+            {
+                PythonException.ThrowIfPythonErrorOccurred();
+                throw new PyInteropException("loop.run_until_complete() returned null.");
+            }
+
+            try
+            {
+                if (typeof(T) == typeof(object))
+                {
+                    return default!;
+                }
+
+                return TypeConverter.FromPython<T>(pyResult);
+            }
+            finally
+            {
+                NativeMethods.Py_DecRef(pyResult);
+            }
         }
         finally
         {
+            // 5. Always close the loop to release IOCP/selector resources.
+            if (loop != IntPtr.Zero)
+            {
+                var closeFunc = NativeMethods.PyObject_GetAttrString(loop, "close");
+                if (closeFunc != IntPtr.Zero)
+                {
+                    var noArgs = NativeMethods.PyTuple_New(0);
+                    _ = NativeMethods.PyObject_CallObject(closeFunc, noArgs);
+                    NativeMethods.Py_DecRef(noArgs);
+                    NativeMethods.Py_DecRef(closeFunc);
+                }
+
+                NativeMethods.Py_DecRef(loop);
+            }
+
             NativeMethods.Py_DecRef(asyncioModule);
         }
     }
