@@ -13,6 +13,7 @@ concurrency:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
         python-version: ['3.11', '3.12', '3.13', '3.14']
@@ -40,6 +41,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          update-environment: true
 
       - name: Install packages
         run: |
@@ -55,6 +57,7 @@ jobs:
       - name: Test
         shell: bash
         run: |
+          printenv
           dotnet test -c Release --no-build --no-restore
 
       - name: Pack 
