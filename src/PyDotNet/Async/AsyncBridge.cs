@@ -55,39 +55,48 @@ internal static class AsyncBridge
             throw new PyInteropException("Failed to import 'asyncio'.");
         }
 
-        // We use new_event_loop() + run_until_complete() + close() instead of
-        // asyncio.run() to avoid asyncio.Runner.close() calling
-        // signal.set_wakeup_fd(-1) without a thread guard (Python ≤ 3.12).
-        // All TUnit tests run on thread-pool threads, which are never the main
-        // thread, so asyncio.run() raises ValueError on those Python versions.
+        // We use SelectorEventLoop() + run_until_complete() + close() rather than
+        // asyncio.run() or asyncio.new_event_loop() to avoid signal.set_wakeup_fd errors
+        // on Python 3.12 when called from a non-main thread:
+        //
+        //  • asyncio.run() → asyncio.Runner.close() calls signal.set_wakeup_fd(-1)
+        //    without a thread guard on Python ≤ 3.12.
+        //
+        //  • asyncio.new_event_loop() on Windows returns ProactorEventLoop, whose
+        //    _make_self_pipe() calls signal.set_wakeup_fd() without a thread guard on
+        //    Python ≤ 3.12 (guard added in 3.13).
+        //
+        // SelectorEventLoop._make_self_pipe() never calls set_wakeup_fd in __init__.
+        // On Python 3.12, its run_forever() does call it but inside
+        // try/except (ValueError, OSError) so it fails silently on non-main threads.
         IntPtr loop = IntPtr.Zero;
         try
         {
-            // 3. Create a fresh event loop: asyncio.new_event_loop()
-            var newLoopFunc = NativeMethods.PyObject_GetAttrString(asyncioModule, "new_event_loop");
-            if (newLoopFunc == IntPtr.Zero)
+            // 3. Instantiate SelectorEventLoop — signal-safe on all supported Python versions.
+            var selectorLoopClass = NativeMethods.PyObject_GetAttrString(asyncioModule, "SelectorEventLoop");
+            if (selectorLoopClass == IntPtr.Zero)
             {
                 NativeMethods.Py_DecRef(coroutine);
                 PythonException.ThrowIfPythonErrorOccurred();
-                throw new PyInteropException("asyncio.new_event_loop not found.");
+                throw new PyInteropException("asyncio.SelectorEventLoop not found.");
             }
 
             try
             {
                 var noArgs = NativeMethods.PyTuple_New(0);
-                loop = NativeMethods.PyObject_CallObject(newLoopFunc, noArgs);
+                loop = NativeMethods.PyObject_CallObject(selectorLoopClass, noArgs);
                 NativeMethods.Py_DecRef(noArgs);
             }
             finally
             {
-                NativeMethods.Py_DecRef(newLoopFunc);
+                NativeMethods.Py_DecRef(selectorLoopClass);
             }
 
             if (loop == IntPtr.Zero)
             {
                 NativeMethods.Py_DecRef(coroutine);
                 PythonException.ThrowIfPythonErrorOccurred();
-                throw new PyInteropException("asyncio.new_event_loop() returned null.");
+                throw new PyInteropException("asyncio.SelectorEventLoop() returned null.");
             }
 
             // 4. Call loop.run_until_complete(coroutine)
