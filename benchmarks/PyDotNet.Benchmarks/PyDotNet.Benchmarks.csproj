@@ -1,17 +1,23 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>$(DefaultTargetFramework)</TargetFramework>
+    <!-- Benchmarks are net10.0-only — BenchmarkDotNet child processes inherit this TFM. -->
+    <TargetFramework>net10.0</TargetFramework>
     <OutputType>Exe</OutputType>
     <RootNamespace>PyDotNet.Benchmarks</RootNamespace>
     <AssemblyName>PyDotNet.Benchmarks</AssemblyName>
-    <Description>Performance benchmarks for PyDotNet — no BenchmarkDotNet dependency.</Description>
-    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <Description>BenchmarkDotNet performance benchmarks for PyDotNet vs Python.NET.</Description>
+    <NoWarn>$(NoWarn);CS1591;CA1707</NoWarn>
     <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <!-- BenchmarkDotNet compiles its own harness in Release; keep host build optimised too. -->
     <Optimize>true</Optimize>
+    <!-- Suppress the "non-nullable field not initialized" warning for fields set in GlobalSetup. -->
+    <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+    <PackageReference Include="pythonnet" />
     <ProjectReference Include="../../src/PyDotNet/PyDotNet.csproj" />
   </ItemGroup>
 
