@@ -68,6 +68,7 @@ jobs:
         run: |
           dotnet pack -c Release --no-build -o nupkgs src/PyDotNet/
           dotnet pack -c Release --no-build -o nupkgs src/PyDotNet.NumPy/
+          dotnet pack -c Release --no-build -o nupkgs src/PyDotNet.DataFrames/
 
       - name: Upload NuGet packages
         if: matrix.pack-nupkg == true

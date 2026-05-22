@@ -5,7 +5,7 @@ A modern, high-performance, async-aware, zero-copy Python ↔ .NET interop runti
 PyDotNet embeds CPython directly inside your .NET process. No subprocess, no sockets, no serialisation — just raw function calls across the language boundary with full GIL awareness and optional zero-copy memory sharing.
 
 > **Plugin packages** — typed, idiomatic C# wrappers for popular Python libraries ship as separate NuGet packages built on top of PyDotNet core:
-> [`PyDotNet.NumPy`](docs/numpy.md) · `PyDotNet.DataFrames` _(planned)_ · `PyDotNet.Torch` _(planned)_ · `PyDotNet.LangChain` _(planned)_ · `PyDotNet.Matplotlib` _(planned)_
+> [`PyDotNet.NumPy`](docs/numpy.md) · [`PyDotNet.DataFrames`](docs/dataframes.md) · `PyDotNet.Torch` _(planned)_ · `PyDotNet.LangChain` _(planned)_ · `PyDotNet.Matplotlib` _(planned)_
 
 [![Sponsor me](https://img.shields.io/badge/Sponsor-me-pink?style=flat&logo=github-sponsors)](https://github.com/sponsors/zcsizmadia)
 [![Build](https://github.com/zcsizmadia/PyDotNet/actions/workflows/build.yml/badge.svg)](https://github.com/zcsizmadia/PyDotNet/actions/workflows/build.yml)
@@ -1273,7 +1273,7 @@ Each plugin is a separate NuGet package with zero-copy data sharing, async reduc
 | Plugin | Package | Status | Docs |
 |--------|---------|--------|------|
 | **NumPy** | `PyDotNet.NumPy` | ✅ Released | [docs/numpy.md](docs/numpy.md) |
-| **Pandas + scikit-learn** | `PyDotNet.DataFrames` | 🗓 Planned | — |
+| **Pandas + Polars** | `PyDotNet.DataFrames` | ✅ Released | [docs/dataframes.md](docs/dataframes.md) |
 | **PyTorch** | `PyDotNet.Torch` | 🗓 Planned | — |
 | **LangChain** | `PyDotNet.LangChain` | 🗓 Planned | — |
 | **Matplotlib** | `PyDotNet.Matplotlib` | 🗓 Planned | — |

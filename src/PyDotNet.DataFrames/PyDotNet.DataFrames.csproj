@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>$(DefaultTargetFrameworks)</TargetFrameworks>
+    <OutputType>Library</OutputType>
+    <RootNamespace>PyDotNet.DataFrames</RootNamespace>
+    <AssemblyName>PyDotNet.DataFrames</AssemblyName>
+    <Description>Typed DataFrame bindings for PyDotNet — zero-copy Arrow column reads, Pandas and Polars support.</Description>
+    <PackageTags>python;pandas;polars;arrow;dataframe;interop;dotnet;zero-copy</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IsPackable>true</IsPackable>
+    <PackageReadmeFile>dataframes.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)../../docs/dataframes.md"
+          Pack="true" PackagePath="/"
+          Condition="Exists('$(MSBuildThisFileDirectory)../../docs/dataframes.md')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../PyDotNet/PyDotNet.csproj" />
+  </ItemGroup>
+
+</Project>

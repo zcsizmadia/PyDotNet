@@ -1,15 +1,18 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/PyDotNet.DataFrames/PyDotNet.DataFrames.csproj" />
     <Project Path="src/PyDotNet.NumPy/PyDotNet.NumPy.csproj" />
     <Project Path="src/PyDotNet/PyDotNet.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/PyDotNet.DataFrames.Tests/PyDotNet.DataFrames.Tests.csproj" />
     <Project Path="tests/PyDotNet.NumPy.Tests/PyDotNet.NumPy.Tests.csproj" />
     <Project Path="tests/PyDotNet.Snippets.Tests/PyDotNet.Snippets.Tests.csproj" />
     <Project Path="tests/PyDotNet.Tests/PyDotNet.Tests.csproj" />
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/PyDotNet.Sample.Basic/PyDotNet.Sample.Basic.csproj" />
+    <Project Path="samples/PyDotNet.Sample.DataFrames/PyDotNet.Sample.DataFrames.csproj" />
     <Project Path="samples/PyDotNet.Sample.Async/PyDotNet.Sample.Async.csproj" />
     <Project Path="samples/PyDotNet.Sample.Kwargs/PyDotNet.Sample.Kwargs.csproj" />
     <Project Path="samples/PyDotNet.Sample.NumPy/PyDotNet.Sample.NumPy.csproj" />

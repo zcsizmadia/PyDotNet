@@ -58,7 +58,7 @@ jobs:
           fi
 
           # Path to the specific nupkg we want
-          TARGET_NUPKGS="PyDotNet PyDotNet.NumPy"
+          TARGET_NUPKGS="PyDotNet PyDotNet.NumPy PyDotNet.DataFrames"
 
           # Verify .nupkg exists for every package
           for NUPKG in $TARGET_NUPKGS; do

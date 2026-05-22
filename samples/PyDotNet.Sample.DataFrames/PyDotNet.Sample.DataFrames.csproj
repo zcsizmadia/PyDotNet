@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>$(DefaultTargetFramework)</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>PyDotNet.Sample.DataFrames</RootNamespace>
+    <AssemblyName>PyDotNet.Sample.DataFrames</AssemblyName>
+    <Description>DataFrame interop sample — Pandas and Polars zero-copy Arrow column reads.</Description>
+    <NoWarn>$(NoWarn);CS1591;CA1861</NoWarn>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/PyDotNet.DataFrames/PyDotNet.DataFrames.csproj" />
+  </ItemGroup>
+
+</Project>
