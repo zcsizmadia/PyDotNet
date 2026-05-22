@@ -21,13 +21,19 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 - [Runtime lifecycle](#runtime-lifecycle)
 - [Working with Python objects](#working-with-python-objects)
 - [Type marshaling](#type-marshaling)
+- [Typed Python collections](#typed-python-collections)
 - [Zero-copy buffer access](#zero-copy-buffer-access)
+  - [Python → .NET (buffer protocol)](#python--net-buffer-protocol)
+  - [.NET → Python (PyMemoryView)](#net--python-pymemoryview)
 - [Tensor and array interop](#tensor-and-array-interop)
   - [PyTensor](#pytensor)
   - [DLPack](#dlpack)
   - [Array interface](#array-interface)
 - [GPU-accelerated libraries](#gpu-accelerated-libraries)
 - [Async/await bridge](#asyncawait-bridge)
+  - [Coroutines](#coroutines)
+  - [Keyword arguments in async calls](#keyword-arguments-in-async-calls)
+  - [Async generators (IAsyncEnumerable)](#async-generators-iasyncenumerable)
 - [Configuration](#configuration)
 - [Exception handling](#exception-handling)
 - [Thread safety and the GIL](#thread-safety-and-the-gil)
@@ -42,10 +48,14 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 |---|---|
 | **In-process embedding** | Loads `libpython` / `python3xx.dll` directly — no subprocess or IPC overhead |
 | **Zero-copy buffers** | Exposes Python's buffer protocol as `Span<T>` / `Memory<T>` |
+| **Zero-copy .NET → Python** | `PyMemoryView<T>` pins any `Memory<T>` and hands it to Python as a `memoryview` — no copy |
 | **DLPack exchange** | Zero-copy tensor exchange via `__dlpack__()` (NumPy ≥ 1.22, PyTorch, CuPy, JAX, TF) |
 | **Array interface** | Reads `__array_interface__` and `__cuda_array_interface__` without importing NumPy |
 | **GPU compute libraries** | Call CuPy, nvmath-python, PyTorch, JAX, or any CUDA-accelerated library; inspect GPU tensor metadata via DLPack without a device copy |
 | **Async/await bridge** | `await fn.CallAsync<T>()` drives Python `asyncio` coroutines from .NET Tasks |
+| **Async generators** | `fn.CallAsyncEnumerable<T>()` streams Python async generators as `IAsyncEnumerable<T>` |
+| **Keyword arguments** | Pass `kwargs` to any Python callable via `Call(args, kwargs)` and `CallAsync(args, kwargs)` |
+| **Typed collections** | `PyList<T>` and `PyDict<TKey,TValue>` — strongly-typed wrappers with `IReadOnlyList<T>` / `IReadOnlyDictionary<TKey,TValue>` |
 | **Full type marshaling** | Bidirectional conversion: primitives, strings, dates, collections, complex numbers |
 | **GIL-safe threading** | Automatic GIL acquire/release via `GilScope`; free-threaded Python 3.13+ detected |
 | **Auto-discovery** | Finds the Python shared library from PATH, registry (Windows), or environment variable |
@@ -278,6 +288,12 @@ using var obj = log.Call(Math.E);
 // Call with keyword arguments.
 using var obj2 = log.Call(args: [100.0], kwargs: new Dictionary<string, object?> { ["base"] = 10.0 });
 
+// Typed call with keyword arguments.
+double result3 = log.Call<double>([100.0], new Dictionary<string, object?> { ["base"] = 10.0 });
+
+// Async call with keyword arguments.
+double result4 = await log.CallAsync<double>([100.0], new Dictionary<string, object?> { ["base"] = 10.0 });
+
 // Async call (see Async/await bridge section).
 double asyncResult = await log.CallAsync<double>(Math.E);
 
@@ -350,7 +366,71 @@ Specify the target type via `As<T>()` or `Call<T>()`.
 
 ---
 
+## Typed Python collections
+
+`PyList<T>` and `PyDict<TKey, TValue>` are strongly-typed wrappers around Python `list` and `dict` objects. They implement the standard .NET `IReadOnlyList<T>` and `IReadOnlyDictionary<TKey, TValue>` interfaces and acquire the GIL automatically on each operation.
+
+### PyList\<T\>
+
+```csharp
+// Create from .NET data.
+using var primes = PyList<int>.From([2, 3, 5, 7, 11]);
+
+// IReadOnlyList<T>
+Console.WriteLine(primes.Count);    // 5
+Console.WriteLine(primes[0]);       // 2
+
+// Mutate in place.
+primes.Add(13);
+primes.Set(0, 1);
+
+// Enumerate without extra allocations.
+foreach (var p in primes)
+    Console.Write($"{p} ");
+
+// Wrap an existing Python list object.
+interp.Execute("my_list = [10, 20, 30]");
+using var obj = interp.Evaluate("my_list");
+using var wrapped = PyList<int>.Wrap(obj);  // shares the underlying Python list
+```
+
+### PyDict\<TKey, TValue\>
+
+```csharp
+// Create from .NET data.
+var source = new Dictionary<string, double> { ["pi"] = 3.14, ["e"] = 2.72 };
+using var constants = PyDict<string, double>.From(source);
+
+// IReadOnlyDictionary<TKey, TValue>
+Console.WriteLine(constants.Count);          // 2
+Console.WriteLine(constants["pi"]);          // 3.14
+Console.WriteLine(constants.ContainsKey("e")); // true
+
+// TryGetValue for safe access.
+if (constants.TryGetValue("tau", out var tau))
+    Console.WriteLine(tau);
+
+// Mutate.
+constants.Set("tau", 6.28);
+
+// Enumerate all pairs.
+foreach (var (key, value) in constants)
+    Console.WriteLine($"{key} = {value}");
+
+// Keys / Values sequences.
+foreach (var k in constants.Keys) Console.WriteLine(k);
+
+// Wrap an existing Python dict object.
+interp.Execute("config = {'debug': True, 'timeout': 30}");
+using var pyConfig = interp.Evaluate("config");
+using var cfg = PyDict<string, object>.Wrap(pyConfig);
+```
+
+---
+
 ## Zero-copy buffer access
+
+### Python → .NET (buffer protocol)
 
 Any Python object that implements the buffer protocol (`bytearray`, NumPy arrays, `array.array`, etc.) can be accessed directly as a `Span<T>` without any copying.
 
@@ -377,6 +457,51 @@ byte[] copy = buf.ToArray<byte>();
 ```
 
 `PyBuffer` is disposed automatically. While it is live, the underlying Python buffer is pinned.
+
+### .NET → Python (PyMemoryView)
+
+`PyMemoryView<T>` pins a `Memory<T>` and exposes it to Python as a `memoryview` — no copy in either direction. The .NET memory is pinned for the lifetime of the `PyMemoryView<T>` instance.
+
+Supported element types: `byte`, `sbyte`, `short`, `ushort`, `int`, `uint`, `long`, `ulong`, `float`, `double`.
+
+```csharp
+// Expose a float array to Python — zero allocation, zero copy.
+var data = new float[] { 1.0f, 2.0f, 3.0f, 4.0f };
+using var mv = PyMemoryView<float>.From(data.AsMemory());
+
+interp.Execute("""
+    import struct
+
+    def double_in_place(view):
+        for i in range(len(view)):
+            view[i] *= 2
+    """);
+
+using var module = interp.ImportModule("__main__");
+using var fn = module.GetFunction("double_in_place");
+fn.Call(mv.PyObject);   // Python writes back through the same pointer
+
+Console.WriteLine(data[0]); // 2.0  — .NET sees the change immediately
+
+// Use with numpy.frombuffer — also zero-copy.
+interp.Execute("""
+    import numpy as np
+
+    def numpy_sum(view):
+        return float(np.frombuffer(view, dtype=np.float32).sum())
+    """);
+
+using var sumFn = module.GetFunction("numpy_sum");
+double total = sumFn.Call<double>(mv.PyObject);  // 10.0
+```
+
+For a **read-only** view (Python cannot write):
+
+```csharp
+using var ro = PyMemoryView<int>.From(data.AsMemory(), readOnly: true);
+```
+
+> **Lifetime**: `PyMemoryView<T>` must be disposed **before** the backing `Memory<T>` is freed or moved. The `using` pattern ensures this when both live within the same scope.
 
 ---
 
@@ -573,6 +698,8 @@ Console.WriteLine(t.ElementCount);  // 65536
 
 Python `async def` functions are first-class citizens. Call them with `CallAsync<T>()` and await the returned `Task<T>` from any .NET async method.
 
+### Coroutines
+
 ```csharp
 interp.Execute("""
     import asyncio
@@ -608,6 +735,62 @@ await log.CallAsync("system started");
 ```
 
 Internally, each call creates a fresh `asyncio.SelectorEventLoop`, runs the coroutine to completion, then closes the loop. Using `SelectorEventLoop` explicitly (rather than the platform default `ProactorEventLoop` on Windows) avoids `signal.set_wakeup_fd` errors when called from non-main threads on Python 3.12.
+
+### Keyword arguments in async calls
+
+All `CallAsync` overloads accept an optional `IDictionary<string, object?>` for keyword arguments:
+
+```csharp
+interp.Execute("""
+    import asyncio
+
+    async def fetch(url, timeout=30, retries=3):
+        await asyncio.sleep(0)
+        return f"fetched:{url}:timeout={timeout}:retries={retries}"
+    """);
+
+using var module = interp.ImportModule("__main__");
+using var fetch = module.GetFunction("fetch");
+
+var result = await fetch.CallAsync<string>(
+    args:   ["https://api.example.com"],
+    kwargs: new Dictionary<string, object?> { ["timeout"] = 5, ["retries"] = 1 });
+// "fetched:https://api.example.com:timeout=5:retries=1"
+```
+
+### Async generators (IAsyncEnumerable)
+
+Python `async def` functions that use `yield` are **async generators**. Call them with
+`CallAsyncEnumerable<T>()` to get a .NET `IAsyncEnumerable<T>` that streams items one at a
+time — ideal for large datasets, event streams, and real-time feeds.
+
+```csharp
+interp.Execute("""
+    import asyncio
+
+    async def ticker(symbol, count):
+        for i in range(count):
+            await asyncio.sleep(0.01)
+            yield {"symbol": symbol, "tick": i, "price": 100.0 + i * 0.5}
+    """);
+
+using var module = interp.ImportModule("__main__");
+using var tickerFn = module.GetFunction("ticker");
+
+await foreach (var tick in tickerFn.CallAsyncEnumerable<object>("AAPL", 5))
+{
+    Console.WriteLine(tick);
+}
+```
+
+Early break is safe — the generator is cleaned up on `DisposeAsync`:
+
+```csharp
+await foreach (var item in fn.CallAsyncEnumerable<int>(1000))
+{
+    if (item > 9) break;   // disposes the iterator cleanly
+}
+```
 
 ---
 
@@ -763,6 +946,18 @@ dotnet run --project samples/PyDotNet.Sample.ZeroCopy
 
 # Async: driving Python asyncio coroutines from .NET Tasks.
 dotnet run --project samples/PyDotNet.Sample.Async
+
+# Keyword arguments: pass kwargs to synchronous and async Python calls.
+dotnet run --project samples/PyDotNet.Sample.Kwargs
+
+# Typed collections: create and consume PyList<T> and PyDict<TKey,TValue>.
+dotnet run --project samples/PyDotNet.Sample.TypedCollections
+
+# Async generators: iterate Python async generators as IAsyncEnumerable<T>.
+dotnet run --project samples/PyDotNet.Sample.AsyncGenerators
+
+# Memory view: zero-copy .NET→Python sharing via PyMemoryView<T>.
+dotnet run --project samples/PyDotNet.Sample.MemoryView
 
 # GPU: CuPy matrix multiply, nvmath-python FFT, DLPack metadata, C#→GPU→C# zero-copy.
 # Falls back to NumPy automatically when no CUDA GPU is available.

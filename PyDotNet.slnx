@@ -8,9 +8,13 @@
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/PyDotNet.Sample.Basic/PyDotNet.Sample.Basic.csproj" />
-    <Project Path="samples/PyDotNet.Sample.Gpu/PyDotNet.Sample.Gpu.csproj" />
-    <Project Path="samples/PyDotNet.Sample.ZeroCopy/PyDotNet.Sample.ZeroCopy.csproj" />
     <Project Path="samples/PyDotNet.Sample.Async/PyDotNet.Sample.Async.csproj" />
+    <Project Path="samples/PyDotNet.Sample.Kwargs/PyDotNet.Sample.Kwargs.csproj" />
+    <Project Path="samples/PyDotNet.Sample.TypedCollections/PyDotNet.Sample.TypedCollections.csproj" />
+    <Project Path="samples/PyDotNet.Sample.AsyncGenerators/PyDotNet.Sample.AsyncGenerators.csproj" />
+    <Project Path="samples/PyDotNet.Sample.MemoryView/PyDotNet.Sample.MemoryView.csproj" />
+    <Project Path="samples/PyDotNet.Sample.ZeroCopy/PyDotNet.Sample.ZeroCopy.csproj" />
+    <Project Path="samples/PyDotNet.Sample.Gpu/PyDotNet.Sample.Gpu.csproj" />
   </Folder>
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks/PyDotNet.Benchmarks/PyDotNet.Benchmarks.csproj" />

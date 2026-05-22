@@ -27,7 +27,7 @@ public sealed class PyFunction : PyObject
     /// <summary>
     /// Calls the Python function with positional and keyword arguments.
     /// </summary>
-    public PyObject Call(object?[] args, IDictionary<string, object?> kwargs)
+    public new PyObject Call(object?[] args, IDictionary<string, object?> kwargs)
     {
         ArgumentNullException.ThrowIfNull(kwargs);
         using var gil = new GilScope();
@@ -45,6 +45,17 @@ public sealed class PyFunction : PyObject
     }
 
     /// <summary>
+    /// Calls the Python function with positional and keyword arguments and converts the result
+    /// to <typeparamref name="T"/>.
+    /// </summary>
+    public new T Call<T>(object?[] args, IDictionary<string, object?> kwargs)
+    {
+        using var result = Call(args, kwargs);
+        using var gil = new GilScope();
+        return TypeConverter.FromPython<T>(result.Handle);
+    }
+
+    /// <summary>
     /// Calls the Python function, treating it as a coroutine, and returns a
     /// <see cref="Task{T}"/> that completes when the coroutine finishes.
     /// </summary>
@@ -54,11 +65,36 @@ public sealed class PyFunction : PyObject
     }
 
     /// <summary>
+    /// Calls the Python function as a coroutine with keyword arguments.
+    /// </summary>
+    public Task<T> CallAsync<T>(object?[] args, IDictionary<string, object?> kwargs)
+    {
+        return AsyncBridge.RunCoroutineAsync<T>(Handle, args, kwargs);
+    }
+
+    /// <summary>
     /// Calls the Python function as a coroutine without returning a value.
     /// </summary>
     public Task CallAsync(params object?[] args)
     {
         return AsyncBridge.RunCoroutineAsync(Handle, args);
+    }
+
+    /// <summary>
+    /// Calls the Python function as a coroutine with keyword arguments without returning a value.
+    /// </summary>
+    public Task CallAsync(object?[] args, IDictionary<string, object?> kwargs)
+    {
+        return AsyncBridge.RunCoroutineAsync(Handle, args, kwargs);
+    }
+
+    /// <summary>
+    /// Calls the Python async generator and streams its values as an
+    /// <see cref="IAsyncEnumerable{T}"/>.
+    /// </summary>
+    public IAsyncEnumerable<T> CallAsyncEnumerable<T>(params object?[] args)
+    {
+        return AsyncBridge.StreamAsyncGenerator<T>(Handle, args);
     }
 
     /// <summary>

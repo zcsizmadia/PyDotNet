@@ -344,6 +344,34 @@ public class PyObject : IDisposable
         return TypeConverter.FromPython<T>(result.Handle);
     }
 
+    /// <summary>
+    /// Calls this object with positional and keyword arguments.
+    /// Equivalent to <c>self(*args, **kwargs)</c> in Python.
+    /// </summary>
+    public PyObject Call(object?[] args, IDictionary<string, object?> kwargs)
+    {
+        ArgumentNullException.ThrowIfNull(kwargs);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var gil = new GilScope();
+        if (NativeMethods.PyCallable_Check(_handle) == 0)
+        {
+            throw new PyInteropException("Object is not callable.");
+        }
+
+        return PyModule.CallWithKwargsInternal(_handle, args, kwargs);
+    }
+
+    /// <summary>
+    /// Calls this object with positional and keyword arguments, and converts the result
+    /// to <typeparamref name="T"/>.
+    /// </summary>
+    public T Call<T>(object?[] args, IDictionary<string, object?> kwargs)
+    {
+        using var result = Call(args, kwargs);
+        using var gil = new GilScope();
+        return TypeConverter.FromPython<T>(result.Handle);
+    }
+
     // ── Iterator protocol ─────────────────────────────────────────────────
 
     /// <summary>
