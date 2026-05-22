@@ -22,6 +22,9 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 - [Working with Python objects](#working-with-python-objects)
 - [Type marshaling](#type-marshaling)
 - [Typed Python collections](#typed-python-collections)
+- [Tuple marshaling](#tuple-marshaling)
+- [Weak references](#weak-references)
+- [UTF-8 zero-copy string reads](#utf-8-zero-copy-string-reads)
 - [Zero-copy buffer access](#zero-copy-buffer-access)
   - [Python → .NET (buffer protocol)](#python--net-buffer-protocol)
   - [.NET → Python (PyMemoryView)](#net--python-pymemoryview)
@@ -49,6 +52,7 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 | **In-process embedding** | Loads `libpython` / `python3xx.dll` directly — no subprocess or IPC overhead |
 | **Zero-copy buffers** | Exposes Python's buffer protocol as `Span<T>` / `Memory<T>` |
 | **Zero-copy .NET → Python** | `PyMemoryView<T>` pins any `Memory<T>` and hands it to Python as a `memoryview` — no copy |
+| **Zero-copy string reads** | `PyObject.UseUtf8Span()` gives direct access to Python's internal UTF-8 buffer — no string allocation |
 | **DLPack exchange** | Zero-copy tensor exchange via `__dlpack__()` (NumPy ≥ 1.22, PyTorch, CuPy, JAX, TF) |
 | **Array interface** | Reads `__array_interface__` and `__cuda_array_interface__` without importing NumPy |
 | **GPU compute libraries** | Call CuPy, nvmath-python, PyTorch, JAX, or any CUDA-accelerated library; inspect GPU tensor metadata via DLPack without a device copy |
@@ -56,6 +60,9 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 | **Async generators** | `fn.CallAsyncEnumerable<T>()` streams Python async generators as `IAsyncEnumerable<T>` |
 | **Keyword arguments** | Pass `kwargs` to any Python callable via `Call(args, kwargs)` and `CallAsync(args, kwargs)` |
 | **Typed collections** | `PyList<T>` and `PyDict<TKey,TValue>` — strongly-typed wrappers with `IReadOnlyList<T>` / `IReadOnlyDictionary<TKey,TValue>` |
+| **Tuple marshaling** | `ValueTuple<T1…T7>` is automatically converted to/from Python tuples via `ToPython()`, `As<T>()`, and `Call<T>()` |
+| **Weak references** | `PyWeakRef<T>` / `PyWeakRef.Create<T>()` — track Python objects without preventing GC |
+| **Finalizer-safe GC** | `PyDecRefQueue` background thread drains abandoned object handles from .NET finalizers without holding the GIL inline |
 | **Full type marshaling** | Bidirectional conversion: primitives, strings, dates, collections, complex numbers |
 | **GIL-safe threading** | Automatic GIL acquire/release via `GilScope`; free-threaded Python 3.13+ detected |
 | **Auto-discovery** | Finds the Python shared library from PATH, registry (Windows), or environment variable |
@@ -424,6 +431,119 @@ foreach (var k in constants.Keys) Console.WriteLine(k);
 interp.Execute("config = {'debug': True, 'timeout': 30}");
 using var pyConfig = interp.Evaluate("config");
 using var cfg = PyDict<string, object>.Wrap(pyConfig);
+```
+
+---
+
+## Tuple marshaling
+
+Any .NET `ValueTuple<T1…T7>` is automatically converted to a Python `tuple` when passed to
+Python, and Python tuples can be converted back to ValueTuples via `As<T>()`.
+
+### .NET → Python
+
+```csharp
+interp.Execute("def tup_len(t): return len(t)");
+using var main = interp.ImportModule("__main__");
+using var fn = main.GetFunction("tup_len");
+
+long len = fn.Call<long>((1, "hello", 3.14));   // ValueTuple<int,string,double>
+Console.WriteLine(len);  // 3
+```
+
+### Python → .NET
+
+```csharp
+using var pyTuple = interp.Evaluate("(42, 'world', True)");
+var (n, s, b) = pyTuple.As<(long, string, bool)>();
+Console.WriteLine($"{n} {s} {b}");   // 42 world True
+```
+
+### Dynamic detection
+
+When deserialising with `As<object>()`, a Python `tuple` is returned as `object?[]`:
+
+```csharp
+using var pyTuple = interp.Evaluate("(1, 2, 3)");
+var dyn = pyTuple.As<object>();     // object?[] { 1L, 2L, 3L }
+```
+
+---
+
+## Weak references
+
+`PyWeakRef<T>` wraps a Python `weakref.ref` — it tracks a Python object without keeping it
+alive. Use it to implement observer patterns, caches, or any scenario where you want to know
+whether a Python object still exists without pinning it in memory.
+
+```csharp
+using var obj  = interp.Evaluate("Target()");   // user-defined class; object() doesn't support weakref in Python 3.12+
+using var weak = PyWeakRef.Create(obj);   // PyWeakRef.Create<T>(T target)
+
+Console.WriteLine(weak.IsAlive);           // True
+
+using var back = weak.TryGetTarget();      // T? — null if GC'd
+Console.WriteLine(back is not null);       // True
+```
+
+When the last strong reference is released and Python GC runs, `IsAlive` returns `false` and
+`TryGetTarget()` returns `null`:
+
+```csharp
+PyWeakRef<PyObject>? weak;
+{
+    using var shortLived = interp.Evaluate("Target()");
+    weak = PyWeakRef.Create(shortLived);
+} // shortLived disposed → ref-count drops to 0
+
+interp.Execute("import gc; gc.collect()");
+
+Console.WriteLine(weak.IsAlive);           // False
+Console.WriteLine(weak.TryGetTarget());    // null
+weak.Dispose();
+```
+
+> **Note:** Python `int`, `float`, `str`, and other interned / cached types do **not** support
+> weak references. Passing them to `PyWeakRef.Create` throws `PyInteropException`.
+
+---
+
+## UTF-8 zero-copy string reads
+
+`PyObject.UseUtf8Span(Utf8SpanAction)` gives you a `ReadOnlySpan<byte>` pointing directly
+into CPython's internal UTF-8 buffer. No string allocation, no copying.
+
+The callback is invoked while the GIL is held; the span is only valid inside the callback.
+
+```csharp
+using var pyStr = interp.Evaluate("'hello world'");
+
+pyStr.UseUtf8Span(utf8 =>
+{
+    // Zero-allocation scan
+    int spaces = 0;
+    foreach (var b in utf8)
+        if (b == (byte)' ') spaces++;
+
+    Console.WriteLine($"Spaces: {spaces}");   // 1
+});
+```
+
+**Common use cases:**
+- Hashing Python strings without allocating a .NET `string`
+- Passing Python string content directly to `System.Text.Encoding.UTF8.GetString(span)` for
+  one-shot decoding
+- Computing checksums, pattern scanning, or protocol parsing over large Python strings with
+  zero heap pressure
+
+```csharp
+// SHA-256 of a Python string — zero allocation
+using var secret = interp.Evaluate("'my-api-key'");
+secret.UseUtf8Span(utf8 =>
+{
+    var hash = SHA256.HashData(utf8);
+    Console.WriteLine(Convert.ToHexString(hash));
+});
 ```
 
 ---

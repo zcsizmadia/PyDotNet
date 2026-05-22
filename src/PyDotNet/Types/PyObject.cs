@@ -9,6 +9,10 @@ using PyDotNet.Runtime;
 
 namespace PyDotNet.Types;
 
+/// <summary>Callback used by <see cref="PyObject.UseUtf8Span"/>.</summary>
+/// <param name="utf8">Zero-copy view of the Python string's internal UTF-8 buffer.</param>
+public delegate void Utf8SpanAction(ReadOnlySpan<byte> utf8);
+
 /// <summary>
 /// Wraps a reference-counted CPython object pointer.
 /// All instances own their reference and call <c>Py_DecRef</c> on disposal.
@@ -526,6 +530,26 @@ public class PyObject : IDisposable
         }
     }
 
+    /// <summary>
+    /// Invokes <paramref name="action"/> with a <see cref="ReadOnlySpan{T}"/> pointing
+    /// directly into this Python <c>str</c> object's internal UTF-8 buffer.
+    /// No copy is made; the span is only valid for the duration of the callback.
+    /// </summary>
+    /// <remarks>
+    /// The GIL is acquired for the duration of the call and released afterwards.
+    /// The object must be a Python <c>str</c>; passing other types throws
+    /// <see cref="Exceptions.PyInteropException"/>.
+    /// </remarks>
+    public void UseUtf8Span(Utf8SpanAction action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        using var gil = new GilScope();
+        var span = Marshaling.TypeConverter.BorrowUtf8Span(_handle);
+        action(span);
+    }
+
     /// <inheritdoc />
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Dispose()
@@ -535,7 +559,10 @@ public class PyObject : IDisposable
     }
 
     /// <summary>Releases Python object resources.</summary>
-    /// <param name="disposing">True when called from <see cref="Dispose()"/>; false when called from finalizer.</param>
+    /// <param name="disposing">
+    /// <see langword="true"/> when called from <see cref="Dispose()"/>;
+    /// <see langword="false"/> when called from the finalizer.
+    /// </param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected virtual void Dispose(bool disposing)
     {
@@ -547,12 +574,25 @@ public class PyObject : IDisposable
         _disposed = true;
         PyObjectRegistry.Remove(_registryId);
 
-        if (_handle != IntPtr.Zero)
+        if (_handle == IntPtr.Zero)
         {
+            return;
+        }
+
+        if (disposing)
+        {
+            // Explicit Dispose() — acquire the GIL and release immediately.
             using var gil = new GilScope();
             NativeMethods.Py_DecRef(_handle);
-            _handle = IntPtr.Zero;
         }
+        else
+        {
+            // Finalizer path — the GC thread never holds the GIL.
+            // Enqueue for release on the dedicated PyDecRefQueue background thread.
+            PyDecRefQueue.Enqueue(_handle);
+        }
+
+        _handle = IntPtr.Zero;
     }
 
     /// <summary>

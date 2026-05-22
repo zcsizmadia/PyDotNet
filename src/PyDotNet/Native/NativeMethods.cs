@@ -138,6 +138,15 @@ internal static partial class NativeMethods
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern IntPtr PyUnicode_AsUTF8(IntPtr obj);
 
+    /// <summary>
+    /// Returns a pointer directly into the Python string's internal UTF-8 buffer and
+    /// stores the byte length (not character count) in <paramref name="size"/>.
+    /// The pointer is valid while the GIL is held and the string object is alive.
+    /// Returns <see cref="IntPtr.Zero"/> and sets an exception on error.
+    /// </summary>
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr PyUnicode_AsUTF8AndSize(IntPtr obj, out nint size);
+
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern nint PyUnicode_GetLength(IntPtr obj);
 
@@ -377,6 +386,24 @@ internal static partial class NativeMethods
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern IntPtr PySys_GetObject(
         [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
+
+    // ── Weak references ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Creates a new weak reference to <paramref name="ob"/>.
+    /// <paramref name="callback"/> may be <see cref="IntPtr.Zero"/> for no callback.
+    /// Returns a new reference, or null if <paramref name="ob"/> does not support
+    /// weak references (e.g. integers).
+    /// </summary>
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr PyWeakref_NewRef(IntPtr ob, IntPtr callback);
+
+    /// <summary>
+    /// Returns the referent of the weak reference as a <em>borrowed</em> reference.
+    /// Returns <c>Py_None</c> if the referent has been garbage-collected.
+    /// </summary>
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr PyWeakref_GetObject(IntPtr weakRef);
 
     // ── Version ────────────────────────────────────────────────────────────
 

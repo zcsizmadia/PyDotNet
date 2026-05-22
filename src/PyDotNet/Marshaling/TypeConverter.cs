@@ -7,6 +7,7 @@ using PyDotNet.Exceptions;
 using PyDotNet.Native;
 using PyDotNet.Types;
 
+
 namespace PyDotNet.Marshaling;
 
 /// <summary>
@@ -48,6 +49,7 @@ internal static class TypeConverter
             TimeSpan ts => TimeSpanToPython(ts),
             Complex c => NativeMethods.PyComplex_FromDoubles(c.Real, c.Imaginary),
             PyObject py => BorrowedToPython(py),
+            ITuple tpl => TupleToPython(tpl),
             Array arr => ArrayToPython(arr),
             IEnumerable<object?> list => ListToPython(list),
             IDictionary<string, object?> dict => ToDict(dict),
@@ -134,6 +136,23 @@ internal static class TypeConverter
         if (typeof(T) == typeof(string))
         {
             return (T)(object)PythonToString(pyObj);
+        }
+
+        // ValueTuple fast path — checked at JIT time when T is resolved statically.
+        if (typeof(T).IsValueType && typeof(T).IsGenericType)
+        {
+            var gtd = typeof(T).GetGenericTypeDefinition();
+            if (gtd == typeof(ValueTuple<>)
+                || gtd == typeof(ValueTuple<,>)
+                || gtd == typeof(ValueTuple<,,>)
+                || gtd == typeof(ValueTuple<,,,>)
+                || gtd == typeof(ValueTuple<,,,,>)
+                || gtd == typeof(ValueTuple<,,,,,>)
+                || gtd == typeof(ValueTuple<,,,,,,>))
+            {
+                var boxed = TupleFromPython(pyObj, typeof(T));
+                return (T)boxed!;
+            }
         }
 
         // General path — handles remaining types and PyObject subclasses.
@@ -234,6 +253,22 @@ internal static class TypeConverter
         if (targetType == typeof(object))
         {
             return FromPythonDynamic(pyObj);
+        }
+
+        // ValueTuple<T1…T7>
+        if (targetType.IsValueType && targetType.IsGenericType)
+        {
+            var gtd = targetType.GetGenericTypeDefinition();
+            if (gtd == typeof(ValueTuple<>)
+                || gtd == typeof(ValueTuple<,>)
+                || gtd == typeof(ValueTuple<,,>)
+                || gtd == typeof(ValueTuple<,,,>)
+                || gtd == typeof(ValueTuple<,,,,>)
+                || gtd == typeof(ValueTuple<,,,,,>)
+                || gtd == typeof(ValueTuple<,,,,,,>))
+            {
+                return TupleFromPython(pyObj, targetType);
+            }
         }
 
         // Generic list / array
@@ -462,6 +497,8 @@ internal static class TypeConverter
         var typeName = GetPythonTypeName(pyObj);
         switch (typeName)
         {
+            case "tuple":
+                return TupleFromPythonDynamic(pyObj);
             case "complex":
                 return new Complex(
                     NativeMethods.PyComplex_RealAsDouble(pyObj),
@@ -720,5 +757,124 @@ internal static class TypeConverter
             return NativeMethods.PyBytes_FromStringAndSize(
                 (IntPtr)ptr, span.Length * sizeof(T));
         }
+    }
+
+    // ── Tuple marshaling ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Converts an <see cref="ITuple"/> (any System.ValueTuple or Tuple) to a Python tuple.
+    /// Returns a new reference. GIL must be held by caller.
+    /// </summary>
+    private static IntPtr TupleToPython(ITuple tpl)
+    {
+        var len = tpl.Length;
+        var pyTuple = NativeMethods.PyTuple_New(len);
+        if (pyTuple == IntPtr.Zero)
+        {
+            PythonException.ThrowIfPythonErrorOccurred();
+            throw new PyInteropException("Failed to allocate Python tuple.");
+        }
+
+        for (var i = 0; i < len; i++)
+        {
+            var item = ToPython(tpl[i]);
+            // PyTuple_SetItem steals the reference — no Py_DecRef needed on success.
+            if (NativeMethods.PyTuple_SetItem(pyTuple, i, item) != 0)
+            {
+                NativeMethods.Py_DecRef(item); // release on failure
+                NativeMethods.Py_DecRef(pyTuple);
+                PythonException.ThrowIfPythonErrorOccurred();
+                throw new PyInteropException($"Failed to set item {i} in Python tuple.");
+            }
+        }
+
+        return pyTuple;
+    }
+
+    /// <summary>
+    /// Converts a Python tuple to a typed .NET ValueTuple via reflection.
+    /// GIL must be held by caller.
+    /// </summary>
+    private static object TupleFromPython(IntPtr pyTuple, Type valueTupleType)
+    {
+        var len = NativeMethods.PyTuple_Size(pyTuple);
+        if (len < 0)
+        {
+            NativeMethods.PyErr_Clear();
+            throw new PyInteropException(
+                $"Expected a Python tuple but got a '{GetPythonTypeName(pyTuple)}'.");
+        }
+
+        var typeArgs = valueTupleType.GetGenericArguments();
+        if (len != typeArgs.Length)
+        {
+            throw new PyInteropException(
+                $"Python tuple has {len} elements but target ValueTuple has {typeArgs.Length}.");
+        }
+
+        var items = new object?[len];
+        for (var i = 0; i < len; i++)
+        {
+            var borrowed = NativeMethods.PyTuple_GetItem(pyTuple, i);
+            items[i] = FromPython(borrowed, typeArgs[i]);
+        }
+
+        // ValueTuple.Create only supports up to 8 items — use Activator for generic construction.
+        return Activator.CreateInstance(valueTupleType, items)!;
+    }
+
+    /// <summary>
+    /// Converts a Python tuple to an array of dynamic elements.
+    /// Used by <see cref="FromPythonDynamic"/> when the type is not known at compile time.
+    /// GIL must be held by caller.
+    /// </summary>
+    private static object?[] TupleFromPythonDynamic(IntPtr pyTuple)
+    {
+        var len = NativeMethods.PyTuple_Size(pyTuple);
+        if (len < 0)
+        {
+            NativeMethods.PyErr_Clear();
+            return [];
+        }
+
+        var items = new object?[len];
+        for (var i = 0; i < len; i++)
+        {
+            var borrowed = NativeMethods.PyTuple_GetItem(pyTuple, i);
+            items[i] = FromPythonDynamic(borrowed);
+        }
+
+        return items;
+    }
+
+    // ── UTF-8 zero-copy span ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns a <see cref="ReadOnlySpan{T}"/> pointing directly into the Python string's
+    /// internal UTF-8 buffer. <b>Zero allocation</b> — no copy is made.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The span is only valid while the GIL is held <em>and</em> the Python string object
+    /// is alive (i.e., its reference count is &gt; 0). Do not store the span; extract
+    /// what you need before releasing the GIL or before the <see cref="PyObject"/> might
+    /// be collected.
+    /// </para>
+    /// <para>GIL must be held by the caller.</para>
+    /// </remarks>
+    /// <exception cref="PyInteropException">
+    /// Thrown when <paramref name="pyStr"/> is not a Python <c>str</c> object.
+    /// </exception>
+    internal static unsafe ReadOnlySpan<byte> BorrowUtf8Span(IntPtr pyStr)
+    {
+        var ptr = NativeMethods.PyUnicode_AsUTF8AndSize(pyStr, out var size);
+        if (ptr == IntPtr.Zero)
+        {
+            NativeMethods.PyErr_Clear();
+            throw new PyInteropException(
+                "BorrowUtf8Span: argument is not a Python str object.");
+        }
+
+        return new ReadOnlySpan<byte>((void*)ptr, (int)size);
     }
 }
