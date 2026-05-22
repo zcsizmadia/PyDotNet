@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections.Generic;
 
 using PyDotNet.NumPy.Internal;
@@ -30,6 +31,8 @@ public sealed class NdArray : IDisposable
 {
     private readonly PyObject _obj;
     private DLPackTensor? _dlpack;
+    private readonly MemoryHandle _pinHandle;
+    private readonly bool _hasPinHandle;
     private bool _disposed;
 
     /// <summary>Creates an <see cref="NdArray"/> that takes ownership of <paramref name="obj"/>.</summary>
@@ -37,6 +40,20 @@ public sealed class NdArray : IDisposable
     {
         ArgumentNullException.ThrowIfNull(obj);
         _obj = obj;
+        _pinHandle = default;
+        _hasPinHandle = false;
+    }
+
+    /// <summary>
+    /// Creates an <see cref="NdArray"/> that owns both <paramref name="obj"/> and a pinned
+    /// <paramref name="pinHandle"/> that keeps C# backing memory alive.
+    /// </summary>
+    internal NdArray(PyObject obj, MemoryHandle pinHandle)
+    {
+        ArgumentNullException.ThrowIfNull(obj);
+        _obj = obj;
+        _pinHandle = pinHandle;
+        _hasPinHandle = true;
     }
 
     /// <summary>Exposes the underlying Python object within the assembly (used by <see cref="NumpyModule"/>).</summary>
@@ -397,5 +414,11 @@ public sealed class NdArray : IDisposable
         // Dispose DLPack first: it notifies NumPy we are done before we release the array ref.
         _dlpack?.Dispose();
         _obj.Dispose();
+
+        // Release the C# memory pin last (after Python no longer holds the array).
+        if (_hasPinHandle)
+        {
+            _pinHandle.Dispose();
+        }
     }
 }

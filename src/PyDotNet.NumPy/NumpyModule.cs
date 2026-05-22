@@ -1,3 +1,4 @@
+using System.Buffers;
 using PyDotNet.NumPy.Internal;
 using PyDotNet.Runtime;
 using PyDotNet.Types;
@@ -28,11 +29,13 @@ public sealed class NumpyModule : IDisposable
 {
     private readonly PyModule _np;
     private readonly PyObject _randomObj;
+    private readonly PyObject _fromPtrFunc;
     private bool _disposed;
 
-    private NumpyModule(PyModule np)
+    private NumpyModule(PyModule np, PyObject fromPtrFunc)
     {
         _np = np;
+        _fromPtrFunc = fromPtrFunc;
         _randomObj = np.GetAttr("random");
         Random = new NumpyRandom(_randomObj);
     }
@@ -47,7 +50,19 @@ public sealed class NumpyModule : IDisposable
     public static NumpyModule Import(PyInterpreter interpreter)
     {
         ArgumentNullException.ThrowIfNull(interpreter);
-        return new NumpyModule(interpreter.ImportModule("numpy"));
+        // Define a ctypes-based helper that creates a writable numpy array directly
+        // from a raw C# memory pointer. Unlike DLPack (which NumPy 1.25+ marks as
+        // readonly), np.ndarray with a ctypes buffer is writeable and can be
+        // exported via __dlpack__() for AsSpan<T> access.
+        interpreter.Execute("""
+            import ctypes as _pdn_ct, numpy as _pdn_np
+            def _pdn_from_ptr(ptr_int, count, dtype_str, shape):
+                dt = _pdn_np.dtype(dtype_str)
+                buf = (_pdn_ct.c_uint8 * (count * dt.itemsize)).from_address(ptr_int)
+                return _pdn_np.ndarray(shape=shape, dtype=dt, buffer=buf)
+            """);
+        var fromPtrFunc = interpreter.Evaluate("_pdn_from_ptr");
+        return new NumpyModule(interpreter.ImportModule("numpy"), fromPtrFunc);
     }
 
     /// <summary>Access to <c>numpy.random</c> for random array generation.</summary>
@@ -140,23 +155,34 @@ public sealed class NumpyModule : IDisposable
 
     /// <summary>
     /// Creates an <see cref="NdArray"/> backed directly by <paramref name="data"/> (zero-copy).
-    /// The C# memory is pinned via DLPack until NumPy releases the array.
+    /// The C# memory is pinned and kept alive until the returned <see cref="NdArray"/> is disposed.
     /// </summary>
     /// <remarks>
-    /// The caller must keep the <see cref="Memory{T}"/> alive (e.g. the backing array must not
-    /// be GC-collected) until NumPy has finished using the returned <see cref="NdArray"/>.
-    /// When the NumPy array is eventually garbage-collected by Python, the DLPack deleter
-    /// automatically unpins the C# memory.
+    /// The backing array must remain alive (not be GC-collected) for the lifetime of the
+    /// returned <see cref="NdArray"/>. The pin is released when <see cref="NdArray.Dispose"/> is called.
     /// </remarks>
     /// <param name="data">Flat memory region to expose. The product of <paramref name="shape"/> must equal <c>data.Length</c>.</param>
     /// <param name="shape">Shape of the resulting array.</param>
     /// <typeparam name="T">Unmanaged element type.</typeparam>
-    public NdArray FromMemory<T>(Memory<T> data, long[] shape)
+    public unsafe NdArray FromMemory<T>(Memory<T> data, long[] shape)
         where T : unmanaged
     {
         ArgumentNullException.ThrowIfNull(shape);
-        using var capsule = DLPackTensor.Export<T>(data, shape);
-        return new NdArray(_np.Call("from_dlpack", capsule));
+        var pin = data.Pin();
+        var ptr = (long)(nint)pin.Pointer;
+        var count = (long)data.Length;
+        var dtype = NumpyDTypeHelper.ToNumpyString<T>();
+        PyObject arr;
+        try
+        {
+            arr = _fromPtrFunc.Call(ptr, count, dtype, (object?)shape);
+        }
+        catch
+        {
+            pin.Dispose();
+            throw;
+        }
+        return new NdArray(arr, pin);
     }
 
     /// <summary>
@@ -326,6 +352,7 @@ public sealed class NumpyModule : IDisposable
 
         _disposed = true;
         _randomObj.Dispose();
+        _fromPtrFunc.Dispose();
         _np.Dispose();
     }
 }
