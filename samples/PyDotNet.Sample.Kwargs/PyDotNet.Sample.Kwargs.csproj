@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>$(DefaultTargetFramework)</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>PyDotNet.Sample.Kwargs</RootNamespace>
+    <AssemblyName>PyDotNet.Sample.Kwargs</AssemblyName>
+    <Description>Sample demonstrating keyword arguments (kwargs) in synchronous and async Python calls.</Description>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/PyDotNet/PyDotNet.csproj" />
+  </ItemGroup>
+
+</Project>

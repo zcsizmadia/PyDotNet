@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
+using PyDotNet.Async;
 using PyDotNet.Exceptions;
 using PyDotNet.Marshaling;
 using PyDotNet.Native;
@@ -113,6 +114,7 @@ public static class PyRuntime
 
             NativeMethods.PyGILState_Release(gilState);
             TypeConverter.ResetNoneCache();
+            AsyncBridge.ResetAsyncioCache();
             _mainThreadState = IntPtr.Zero;
 
             // Py_Finalize() is intentionally skipped.

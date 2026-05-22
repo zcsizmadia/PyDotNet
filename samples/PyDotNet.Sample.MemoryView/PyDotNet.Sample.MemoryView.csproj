@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>$(DefaultTargetFramework)</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>PyDotNet.Sample.MemoryView</RootNamespace>
+    <AssemblyName>PyDotNet.Sample.MemoryView</AssemblyName>
+    <Description>Sample demonstrating zero-copy .NET → Python memory sharing via PyMemoryView&lt;T&gt;.</Description>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/PyDotNet/PyDotNet.csproj" />
+  </ItemGroup>
+
+</Project>

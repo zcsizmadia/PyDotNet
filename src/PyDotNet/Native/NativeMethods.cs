@@ -121,6 +121,14 @@ internal static partial class NativeMethods
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern unsafe int PyBuffer_IsContiguous(PyBufferStruct* view, byte order);
 
+    /// <summary>
+    /// Creates a Python <c>memoryview</c> from a caller-filled <see cref="PyBufferStruct"/>.
+    /// Python makes a shallow copy of the struct; the caller must keep the raw data and any
+    /// format/shape/strides pointers alive for as long as the returned memoryview is in use.
+    /// </summary>
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern unsafe IntPtr PyMemoryView_FromBuffer(PyBufferStruct* view);
+
     // ── Unicode ────────────────────────────────────────────────────────────
 
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
@@ -228,6 +236,10 @@ internal static partial class NativeMethods
         IntPtr dict,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string key,
         IntPtr val);
+
+    /// <remarks>Returns a borrowed reference, or null if key not found (no exception set).</remarks>
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr PyDict_GetItem(IntPtr dict, IntPtr key);
 
     /// <remarks>Returns a borrowed reference.</remarks>
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
