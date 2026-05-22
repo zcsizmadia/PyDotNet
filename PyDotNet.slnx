@@ -13,6 +13,7 @@
   <Folder Name="/samples/">
     <Project Path="samples/PyDotNet.Sample.Basic/PyDotNet.Sample.Basic.csproj" />
     <Project Path="samples/PyDotNet.Sample.DataFrames/PyDotNet.Sample.DataFrames.csproj" />
+    <Project Path="samples/PyDotNet.Sample.AdvancedAsync/PyDotNet.Sample.AdvancedAsync.csproj" />
     <Project Path="samples/PyDotNet.Sample.Async/PyDotNet.Sample.Async.csproj" />
     <Project Path="samples/PyDotNet.Sample.Kwargs/PyDotNet.Sample.Kwargs.csproj" />
     <Project Path="samples/PyDotNet.Sample.NumPy/PyDotNet.Sample.NumPy.csproj" />

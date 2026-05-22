@@ -158,6 +158,22 @@ public sealed class PyModule : PyObject
     }
 
     /// <summary>
+    /// Calls a module-level async function by name with a <see cref="CancellationToken"/>.
+    /// When the token fires the returned <see cref="Task{T}"/> transitions to cancelled.
+    /// </summary>
+    public Task<T> CallAsync<T>(string functionName, object?[] args, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(functionName);
+        IntPtr coroutine;
+        using (var gil = new GilScope())
+        {
+            coroutine = CallToCoroutine(functionName, args, kwargs: null);
+        }
+
+        return AsyncBridge.RunCoroutineObjectAsync<T>(coroutine, cancellationToken);
+    }
+
+    /// <summary>
     /// Calls a module-level async function by name with keyword arguments.
     /// </summary>
     public Task<T> CallAsync<T>(
@@ -177,6 +193,26 @@ public sealed class PyModule : PyObject
     }
 
     /// <summary>
+    /// Calls a module-level async function by name with keyword arguments and a <see cref="CancellationToken"/>.
+    /// </summary>
+    public Task<T> CallAsync<T>(
+        string functionName,
+        object?[] args,
+        IDictionary<string, object?> kwargs,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(functionName);
+        ArgumentNullException.ThrowIfNull(kwargs);
+        IntPtr coroutine;
+        using (var gil = new GilScope())
+        {
+            coroutine = CallToCoroutine(functionName, args, kwargs);
+        }
+
+        return AsyncBridge.RunCoroutineObjectAsync<T>(coroutine, cancellationToken);
+    }
+
+    /// <summary>
     /// Calls a module-level async function by name without returning a value.
     /// </summary>
     public Task CallAsync(string functionName, params object?[] args)
@@ -189,6 +225,21 @@ public sealed class PyModule : PyObject
         }
 
         return AsyncBridge.RunCoroutineObjectAsync(coroutine);
+    }
+
+    /// <summary>
+    /// Calls a module-level async function by name without returning a value, with a <see cref="CancellationToken"/>.
+    /// </summary>
+    public Task CallAsync(string functionName, object?[] args, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(functionName);
+        IntPtr coroutine;
+        using (var gil = new GilScope())
+        {
+            coroutine = CallToCoroutine(functionName, args, kwargs: null);
+        }
+
+        return AsyncBridge.RunCoroutineObjectAsync(coroutine, cancellationToken);
     }
 
     /// <summary>
@@ -208,6 +259,27 @@ public sealed class PyModule : PyObject
         }
 
         return AsyncBridge.RunCoroutineObjectAsync(coroutine);
+    }
+
+    /// <summary>
+    /// Calls a module-level async function by name with keyword arguments without returning a value,
+    /// and a <see cref="CancellationToken"/>.
+    /// </summary>
+    public Task CallAsync(
+        string functionName,
+        object?[] args,
+        IDictionary<string, object?> kwargs,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(functionName);
+        ArgumentNullException.ThrowIfNull(kwargs);
+        IntPtr coroutine;
+        using (var gil = new GilScope())
+        {
+            coroutine = CallToCoroutine(functionName, args, kwargs);
+        }
+
+        return AsyncBridge.RunCoroutineObjectAsync(coroutine, cancellationToken);
     }
 
     /// <summary>

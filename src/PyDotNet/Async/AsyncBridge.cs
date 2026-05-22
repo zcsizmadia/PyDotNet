@@ -57,12 +57,26 @@ internal static class AsyncBridge
         return Task.Run(() => RunCoroutineSync<T>(pyCallable, args));
     }
 
+    /// <inheritdoc cref="RunCoroutineAsync{T}(IntPtr,object?[])"/>
+    internal static Task<T> RunCoroutineAsync<T>(IntPtr pyCallable, object?[] args, CancellationToken cancellationToken)
+    {
+        return Task.Run(() => RunCoroutineSync<T>(pyCallable, args), cancellationToken)
+                   .WaitAsync(cancellationToken);
+    }
+
     /// <summary>
     /// Calls <paramref name="pyCallable"/> as a coroutine and discards the return value.
     /// </summary>
     internal static Task RunCoroutineAsync(IntPtr pyCallable, object?[] args)
     {
         return Task.Run(() => RunCoroutineSync<object?>(pyCallable, args));
+    }
+
+    /// <inheritdoc cref="RunCoroutineAsync(IntPtr,object?[])"/>
+    internal static Task RunCoroutineAsync(IntPtr pyCallable, object?[] args, CancellationToken cancellationToken)
+    {
+        return Task.Run(() => RunCoroutineSync<object?>(pyCallable, args), cancellationToken)
+                   .WaitAsync(cancellationToken);
     }
 
     /// <summary>
@@ -76,6 +90,17 @@ internal static class AsyncBridge
         return Task.Run(() => RunCoroutineWithKwargsSync<T>(pyCallable, args, kwargs));
     }
 
+    /// <inheritdoc cref="RunCoroutineAsync{T}(IntPtr,object?[],IDictionary{string,object?})"/>
+    internal static Task<T> RunCoroutineAsync<T>(
+        IntPtr pyCallable,
+        object?[] args,
+        IDictionary<string, object?> kwargs,
+        CancellationToken cancellationToken)
+    {
+        return Task.Run(() => RunCoroutineWithKwargsSync<T>(pyCallable, args, kwargs), cancellationToken)
+                   .WaitAsync(cancellationToken);
+    }
+
     /// <summary>
     /// Calls <paramref name="pyCallable"/> with keyword arguments as a coroutine, discarding the result.
     /// </summary>
@@ -85,6 +110,17 @@ internal static class AsyncBridge
         IDictionary<string, object?> kwargs)
     {
         return Task.Run(() => RunCoroutineWithKwargsSync<object?>(pyCallable, args, kwargs));
+    }
+
+    /// <inheritdoc cref="RunCoroutineAsync(IntPtr,object?[],IDictionary{string,object?})"/>
+    internal static Task RunCoroutineAsync(
+        IntPtr pyCallable,
+        object?[] args,
+        IDictionary<string, object?> kwargs,
+        CancellationToken cancellationToken)
+    {
+        return Task.Run(() => RunCoroutineWithKwargsSync<object?>(pyCallable, args, kwargs), cancellationToken)
+                   .WaitAsync(cancellationToken);
     }
 
     /// <summary>
@@ -102,6 +138,22 @@ internal static class AsyncBridge
     }
 
     /// <summary>
+    /// Drives a coroutine object that has already been created (GIL NOT required from the caller).
+    /// <paramref name="coroutine"/> is a <em>stolen</em> reference — it will be released on
+    /// completion or error.
+    /// When <paramref name="cancellationToken"/> fires the returned <see cref="Task{T}"/> transitions
+    /// to <see cref="TaskStatus.Canceled"/>; the Python coroutine may still complete on a pool thread.
+    /// </summary>
+    internal static Task<T> RunCoroutineObjectAsync<T>(IntPtr coroutine, CancellationToken cancellationToken)
+    {
+        return Task.Run(() =>
+        {
+            using var gil = new GilScope();
+            return RunCoroutineHandle<T>(coroutine); // steals reference
+        }, cancellationToken).WaitAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// Drives a coroutine object that has already been created, discarding the result.
     /// <paramref name="coroutine"/> is a <em>stolen</em> reference.
     /// </summary>
@@ -112,6 +164,20 @@ internal static class AsyncBridge
             using var gil = new GilScope();
             RunCoroutineHandle<object?>(coroutine);
         });
+    }
+
+    /// <summary>
+    /// Drives a coroutine object that has already been created, discarding the result.
+    /// When <paramref name="cancellationToken"/> fires the returned <see cref="Task"/> transitions
+    /// to <see cref="TaskStatus.Canceled"/>; the Python coroutine may still complete on a pool thread.
+    /// </summary>
+    internal static Task RunCoroutineObjectAsync(IntPtr coroutine, CancellationToken cancellationToken)
+    {
+        return Task.Run(() =>
+        {
+            using var gil = new GilScope();
+            RunCoroutineHandle<object?>(coroutine);
+        }, cancellationToken).WaitAsync(cancellationToken);
     }
 
     /// <summary>
@@ -190,8 +256,93 @@ internal static class AsyncBridge
 
     // ── Core event-loop helpers ───────────────────────────────────────────
 
-    /// <summary>
-    /// Drives <paramref name="coroutine"/> to completion on a fresh <c>SelectorEventLoop</c>.
+    /// <summary>    /// Drives <paramref name="coroutine"/> to completion on a fresh <c>SelectorEventLoop</c>
+    /// and returns a new owned reference to the raw Python result object.
+    /// <paramref name="coroutine"/> is a <em>stolen</em> reference.
+    /// GIL must already be held by the caller.
+    /// The caller is responsible for calling <c>Py_DecRef</c> on the returned handle.
+    /// </summary>
+    internal static IntPtr RunCoroutineHandleRaw(IntPtr coroutine)
+    {
+        var asyncioModule = GetAsyncioModule();
+        if (asyncioModule == IntPtr.Zero)
+        {
+            NativeMethods.Py_DecRef(coroutine);
+            PythonException.ThrowIfPythonErrorOccurred();
+            throw new PyInteropException("Failed to import 'asyncio'.");
+        }
+
+        IntPtr loop = IntPtr.Zero;
+        try
+        {
+            var selectorLoopClass = NativeMethods.PyObject_GetAttrString(asyncioModule, "SelectorEventLoop");
+            if (selectorLoopClass == IntPtr.Zero)
+            {
+                NativeMethods.Py_DecRef(coroutine);
+                PythonException.ThrowIfPythonErrorOccurred();
+                throw new PyInteropException("asyncio.SelectorEventLoop not found.");
+            }
+
+            try
+            {
+                var noArgs = NativeMethods.PyTuple_New(0);
+                loop = NativeMethods.PyObject_CallObject(selectorLoopClass, noArgs);
+                NativeMethods.Py_DecRef(noArgs);
+            }
+            finally
+            {
+                NativeMethods.Py_DecRef(selectorLoopClass);
+            }
+
+            if (loop == IntPtr.Zero)
+            {
+                NativeMethods.Py_DecRef(coroutine);
+                PythonException.ThrowIfPythonErrorOccurred();
+                throw new PyInteropException("asyncio.SelectorEventLoop() returned null.");
+            }
+
+            // run_until_complete returns a new reference — caller owns it
+            var runFunc = NativeMethods.PyObject_GetAttrString(loop, "run_until_complete");
+            if (runFunc == IntPtr.Zero)
+            {
+                NativeMethods.Py_DecRef(coroutine);
+                PythonException.ThrowIfPythonErrorOccurred();
+                throw new PyInteropException("loop.run_until_complete not found.");
+            }
+
+            IntPtr pyResult;
+            try
+            {
+                var runArgs = NativeMethods.PyTuple_New(1);
+                _ = NativeMethods.PyTuple_SetItem(runArgs, 0, coroutine); // steals coroutine
+                pyResult = NativeMethods.PyObject_CallObject(runFunc, runArgs);
+                NativeMethods.Py_DecRef(runArgs);
+            }
+            finally
+            {
+                NativeMethods.Py_DecRef(runFunc);
+            }
+
+            if (pyResult == IntPtr.Zero)
+            {
+                throw PythonException.FetchCurrentException();
+            }
+
+            return pyResult; // caller owns this reference
+        }
+        finally
+        {
+            if (loop != IntPtr.Zero)
+            {
+                CloseLoop(loop);
+                NativeMethods.Py_DecRef(loop);
+            }
+
+            NativeMethods.Py_DecRef(asyncioModule);
+        }
+    }
+
+    /// <summary>    /// Drives <paramref name="coroutine"/> to completion on a fresh <c>SelectorEventLoop</c>.
     /// <paramref name="coroutine"/> is a <em>stolen</em> reference.
     /// GIL must already be held by the caller.
     ///
