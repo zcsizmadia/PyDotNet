@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using PyDotNet.Exceptions;
+using PyDotNet.Marshaling;
 using PyDotNet.Native;
 using PyDotNet.Types;
 
@@ -111,6 +112,7 @@ public static class PyRuntime
             PyObjectRegistry.ClearAll();
 
             NativeMethods.PyGILState_Release(gilState);
+            TypeConverter.ResetNoneCache();
             _mainThreadState = IntPtr.Zero;
 
             // Py_Finalize() is intentionally skipped.

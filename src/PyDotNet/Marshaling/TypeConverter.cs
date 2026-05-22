@@ -40,7 +40,7 @@ internal static class TypeConverter
             double d => NativeMethods.PyFloat_FromDouble(d),
             decimal dec => NativeMethods.PyFloat_FromDouble((double)dec),
             string str => NativeMethods.PyUnicode_FromString(str),
-            char c => NativeMethods.PyUnicode_FromString(c.ToString()),
+            char c => NativeMethods.PyUnicode_FromOrdinal(c),
             byte[] bytes => BytesToPython(bytes),
             ReadOnlyMemory<byte> rom => BytesToPython(rom.Span),
             DateTime dt => DateTimeToPython(dt),
@@ -50,7 +50,7 @@ internal static class TypeConverter
             PyObject py => BorrowedToPython(py),
             Array arr => ArrayToPython(arr),
             IEnumerable<object?> list => ListToPython(list),
-            IDictionary<string, object?> dict => DictToPython(dict),
+            IDictionary<string, object?> dict => ToDict(dict),
             _ => throw new PyInteropException($"Cannot convert .NET type '{value.GetType().FullName}' to Python."),
         };
     }
@@ -98,13 +98,52 @@ internal static class TypeConverter
     [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
     internal static T FromPython<T>(IntPtr pyObj)
     {
+        // Fast paths for the most common types.
+        // The JIT eliminates dead branches when T is resolved statically at the call site,
+        // avoiding the boxing/unboxing round-trip through the non-generic overload.
+        if (pyObj == IntPtr.Zero)
+        {
+            return default!;
+        }
+
+        if (typeof(T) == typeof(bool))
+        {
+            return (T)(object)(NativeMethods.PyObject_IsTrue(pyObj) != 0);
+        }
+
+        if (typeof(T) == typeof(int))
+        {
+            return (T)(object)(int)NativeMethods.PyLong_AsLong(pyObj);
+        }
+
+        if (typeof(T) == typeof(long))
+        {
+            return (T)(object)NativeMethods.PyLong_AsLongLong(pyObj);
+        }
+
+        if (typeof(T) == typeof(double))
+        {
+            return (T)(object)NativeMethods.PyFloat_AsDouble(pyObj);
+        }
+
+        if (typeof(T) == typeof(float))
+        {
+            return (T)(object)(float)NativeMethods.PyFloat_AsDouble(pyObj);
+        }
+
+        if (typeof(T) == typeof(string))
+        {
+            return (T)(object)PythonToString(pyObj);
+        }
+
+        // General path — handles remaining types and PyObject subclasses.
         var result = FromPython(pyObj, typeof(T));
         if (result is T typed)
         {
             return typed;
         }
 
-        // Attempt a direct cast / unbox
+        // Attempt a widening conversion (e.g., Python int → C# short).
         try
         {
             return (T)Convert.ChangeType(result!, typeof(T), CultureInfo.InvariantCulture);
@@ -210,14 +249,32 @@ internal static class TypeConverter
 
     // ── Helpers ───────────────────────────────────────────────────────────
 
-    private static IntPtr GetNone()
+    private static volatile IntPtr _none;
+
+    // Returns a new reference to Python None; PyRun_String runs only on the first call.
+    internal static IntPtr GetNone()
     {
-        // Evaluate None in Python and return a new reference
+        var h = _none;
+        if (h != IntPtr.Zero)
+        {
+            NativeMethods.Py_IncRef(h);
+            return h;
+        }
+
         var main = NativeMethods.PyImport_AddModule("__main__");
         var globals = NativeMethods.PyModule_GetDict(main);
-        var none = NativeMethods.PyRun_String("None", PyConstants.EvalInput, globals, globals);
-        return none;
+        h = NativeMethods.PyRun_String("None", PyConstants.EvalInput, globals, globals);
+        if (h != IntPtr.Zero)
+        {
+            NativeMethods.Py_IncRef(h); // +1 for the cache
+            _none = h;                  // volatile write — visible to subsequent GIL holders
+        }
+
+        return h; // caller owns this reference
     }
+
+    // Called from PyRuntime.Shutdown() so the cache is reset if the interpreter is re-initialized.
+    internal static void ResetNoneCache() => _none = IntPtr.Zero;
 
     private static IntPtr BorrowedToPython(PyObject py)
     {
@@ -236,17 +293,62 @@ internal static class TypeConverter
         }
     }
 
-    private static unsafe IntPtr BytesToPython(byte[] bytes)
-    {
-        fixed (byte* ptr = bytes)
-        {
-            return NativeMethods.PyBytes_FromStringAndSize((IntPtr)ptr, bytes.Length);
-        }
-    }
+    private static IntPtr BytesToPython(byte[] bytes) => BytesToPython((ReadOnlySpan<byte>)bytes);
 
     private static IntPtr ArrayToPython(Array arr)
     {
         var list = NativeMethods.PyList_New(arr.Length);
+
+        // Typed fast paths avoid per-element boxing via Array.GetValue().
+        switch (arr)
+        {
+            case double[] d:
+                for (var i = 0; i < d.Length; i++)
+                {
+                    _ = NativeMethods.PyList_SetItem(list, i, NativeMethods.PyFloat_FromDouble(d[i]));
+                }
+
+                return list;
+            case float[] f:
+                for (var i = 0; i < f.Length; i++)
+                {
+                    _ = NativeMethods.PyList_SetItem(list, i, NativeMethods.PyFloat_FromDouble(f[i]));
+                }
+
+                return list;
+            case int[] n:
+                for (var i = 0; i < n.Length; i++)
+                {
+                    _ = NativeMethods.PyList_SetItem(list, i, NativeMethods.PyLong_FromLong(n[i]));
+                }
+
+                return list;
+            case long[] l:
+                for (var i = 0; i < l.Length; i++)
+                {
+                    _ = NativeMethods.PyList_SetItem(list, i, NativeMethods.PyLong_FromLongLong(l[i]));
+                }
+
+                return list;
+            case bool[] b:
+                for (var i = 0; i < b.Length; i++)
+                {
+                    _ = NativeMethods.PyList_SetItem(list, i, NativeMethods.PyBool_FromLong(b[i] ? 1L : 0L));
+                }
+
+                return list;
+            case string[] s:
+                for (var i = 0; i < s.Length; i++)
+                {
+                    var elem = s[i] != null
+                        ? NativeMethods.PyUnicode_FromString(s[i]!)
+                        : GetNone();
+                    _ = NativeMethods.PyList_SetItem(list, i, elem);
+                }
+                return list;
+        }
+
+        // General fallback — boxes each element via Array.GetValue().
         for (var i = 0; i < arr.Length; i++)
         {
             var item = ToPython(arr.GetValue(i));
@@ -258,20 +360,28 @@ internal static class TypeConverter
 
     private static IntPtr ListToPython(IEnumerable<object?> source)
     {
+        // Avoid the ToList() allocation when the source is already an indexed collection.
+        if (source is IList<object?> ilist)
+        {
+            var list = NativeMethods.PyList_New(ilist.Count);
+            for (var i = 0; i < ilist.Count; i++)
+            {
+                var item = ToPython(ilist[i]);
+                _ = NativeMethods.PyList_SetItem(list, i, item); // steals reference
+            }
+
+            return list;
+        }
+
         var items = source.ToList();
-        var list = NativeMethods.PyList_New(items.Count);
+        var pyList = NativeMethods.PyList_New(items.Count);
         for (var i = 0; i < items.Count; i++)
         {
             var item = ToPython(items[i]);
-            _ = NativeMethods.PyList_SetItem(list, i, item); // steals reference
+            _ = NativeMethods.PyList_SetItem(pyList, i, item); // steals reference
         }
 
-        return list;
-    }
-
-    private static IntPtr DictToPython(IDictionary<string, object?> source)
-    {
-        return ToDict(source);
+        return pyList;
     }
 
     private static string PythonToString(IntPtr pyObj)

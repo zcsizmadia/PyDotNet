@@ -133,6 +133,9 @@ internal static partial class NativeMethods
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern nint PyUnicode_GetLength(IntPtr obj);
 
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr PyUnicode_FromOrdinal(int ordinal);
+
     // ── Long (integer) ─────────────────────────────────────────────────────
 
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
