@@ -373,13 +373,40 @@ internal static partial class NativeMethods
         IntPtr capsule,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string? name);
 
+    /// <summary>Overload accepting a pre-pinned UTF-8 name pointer.</summary>
+    [DllImport(PythonDll, EntryPoint = "PyCapsule_GetPointer", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr PyCapsule_GetPointerRaw(IntPtr capsule, IntPtr namePtr);
+
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern int PyCapsule_IsValid(
         IntPtr capsule,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string? name);
 
+    /// <summary>Overload accepting a pre-pinned UTF-8 name pointer.</summary>
+    [DllImport(PythonDll, EntryPoint = "PyCapsule_IsValid", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern int PyCapsule_IsValidRaw(IntPtr capsule, IntPtr namePtr);
+
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern int PyCapsule_CheckExact(IntPtr obj);
+
+    /// <summary>
+    /// Creates a PyCapsule wrapping <paramref name="pointer"/> under the given <paramref name="name"/>.
+    /// <paramref name="destructor"/> is called when the capsule is GC-ed by Python; pass
+    /// <see cref="IntPtr.Zero"/> if no destructor is needed.
+    /// Returns a new reference.
+    /// </summary>
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr PyCapsule_New(
+        IntPtr pointer,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string? name,
+        IntPtr destructor);
+
+    /// <summary>Overload accepting a pre-pinned UTF-8 name pointer (avoids marshal lifetime issues).</summary>
+    [DllImport(PythonDll, EntryPoint = "PyCapsule_New", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr PyCapsule_NewRaw(
+        IntPtr pointer,
+        IntPtr namePtr,
+        IntPtr destructor);
 
     // ── sys module ─────────────────────────────────────────────────────────
 

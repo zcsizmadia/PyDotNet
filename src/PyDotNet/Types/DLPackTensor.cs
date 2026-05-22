@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Runtime.InteropServices;
 
 using PyDotNet.Exceptions;
@@ -200,7 +201,18 @@ public sealed unsafe class DLPackTensor : IDisposable
         return true;
     }
 
-    // ── Factory ───────────────────────────────────────────────────────────
+    /// <summary>
+    /// Copies the tensor data into a new managed array.
+    /// The tensor must be on a CPU-accessible device and contiguous.
+    /// </summary>
+    public T[] ToArray<T>()
+        where T : unmanaged
+    {
+        var span = AsSpan<T>();
+        return span.ToArray();
+    }
+
+    // ── Factory (import) ─────────────────────────────────────────────────
 
     /// <summary>
     /// Creates a <see cref="DLPackTensor"/> from any Python object that implements
@@ -310,6 +322,188 @@ public sealed unsafe class DLPackTensor : IDisposable
         {
             NativeMethods.Py_DecRef(result);
         }
+    }
+
+    // ── Export (.NET → Python) ────────────────────────────────────────────
+
+    // Per-export state stored in a boxed struct so a single GCHandle can track it.
+    private sealed class ExportContext
+    {
+        internal MemoryHandle Pin;
+        internal IntPtr Block; // unmanaged block that holds DLManagedTensor + arrays
+    }
+
+    // Static lookup table: tensor pointer → ExportContext.
+    // Allows the [UnmanagedCallersOnly] deleter to find the context without an instance.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<nint, GCHandle> _exportContexts
+        = new();
+
+    // "dltensor\0" — static, pinned name for PyCapsule_New. CPython keeps a pointer to this.
+    private static readonly byte[] _capsuleNameBytes = "dltensor\0"u8.ToArray();
+    private static readonly GCHandle _capsuleNamePin = GCHandle.Alloc(_capsuleNameBytes, GCHandleType.Pinned);
+
+    /// <summary>
+    /// Pins <paramref name="data"/> and wraps it as a DLPack capsule that Python can
+    /// consume via <c>numpy.from_dlpack(capsule)</c> or <c>torch.from_dlpack(capsule)</c>.
+    /// </summary>
+    /// <typeparam name="T">
+    /// The element type. Supported: <see langword="byte"/>, <see langword="sbyte"/>,
+    /// <see langword="short"/>, <see langword="ushort"/>, <see langword="int"/>,
+    /// <see langword="uint"/>, <see langword="long"/>, <see langword="ulong"/>,
+    /// <see langword="float"/>, <see langword="double"/>.
+    /// </typeparam>
+    /// <param name="data">Flat memory region to expose. Must remain valid until Python is done.</param>
+    /// <param name="shape">Shape of the tensor (product must equal <c>data.Length</c>).</param>
+    /// <returns>
+    /// A <see cref="PyObject"/> wrapping a <c>dltensor</c> PyCapsule. Pass it directly to
+    /// <c>numpy.from_dlpack</c> or <c>torch.from_dlpack</c>.
+    /// The underlying .NET memory is unpinned automatically when the capsule is consumed or GC-ed.
+    /// </returns>
+    public static PyObject Export<T>(Memory<T> data, long[] shape)
+        where T : unmanaged
+    {
+        ArgumentNullException.ThrowIfNull(shape);
+        if (shape.Length == 0)
+        {
+            throw new ArgumentException("Shape must have at least one dimension.", nameof(shape));
+        }
+
+        var total = 1L;
+        foreach (var d in shape)
+        {
+            total *= d;
+        }
+
+        if (total != data.Length)
+        {
+            throw new ArgumentException(
+                $"Shape product ({total}) does not match data length ({data.Length}).",
+                nameof(shape));
+        }
+
+        var ndim = shape.Length;
+        var dtype = GetDLDataType<T>();
+        var pin = data.Pin();
+
+        // Single unmanaged allocation:
+        //   [DLManagedTensor | long[ndim] shape | long[ndim] strides]
+        var tensorSize = sizeof(DLManagedTensor);
+        var arrayBytes = ndim * sizeof(long);
+        var block = (byte*)NativeMemory.AllocZeroed((nuint)(tensorSize + 2 * arrayBytes));
+
+        var ctx = new ExportContext { Pin = pin, Block = (IntPtr)block };
+        var gcHandle = GCHandle.Alloc(ctx);
+
+        var managed = (DLManagedTensor*)block;
+        var shapeArr = (long*)(block + tensorSize);
+        var strideArr = (long*)(block + tensorSize + arrayBytes);
+
+        for (var i = 0; i < ndim; i++)
+        {
+            shapeArr[i] = shape[i];
+        }
+
+        // C-contiguous strides (in elements, not bytes)
+        var stride = 1L;
+        for (var i = ndim - 1; i >= 0; i--)
+        {
+            strideArr[i] = stride;
+            stride *= shape[i];
+        }
+
+        managed->DlTensor = new DLTensor
+        {
+            Data = pin.Pointer,
+            Device = new DLDevice { DeviceType = DLDeviceType.Cpu, DeviceId = 0 },
+            NDim = ndim,
+            DType = dtype,
+            Shape = shapeArr,
+            Strides = strideArr,
+            ByteOffset = 0,
+        };
+        managed->ManagerCtx = (void*)GCHandle.ToIntPtr(gcHandle);
+        managed->Deleter = &DLPackDeleter;
+
+        _exportContexts[(nint)block] = gcHandle;
+
+        using var gil = new GilScope();
+        var namePtr = _capsuleNamePin.AddrOfPinnedObject();
+        var capsule = NativeMethods.PyCapsule_NewRaw(
+            (IntPtr)managed,
+            namePtr,
+            (IntPtr)(delegate* unmanaged[Cdecl]<IntPtr, void>)&CapsuleDestructor);
+
+        if (capsule == IntPtr.Zero)
+        {
+            // Cleanup on failure: free everything before throwing.
+            _exportContexts.TryRemove((nint)block, out _);
+            gcHandle.Free();
+            pin.Dispose();
+            NativeMemory.Free(block);
+            PythonException.ThrowIfPythonErrorOccurred();
+            throw new PyInteropException("PyCapsule_New returned null.");
+        }
+
+        return PyObject.FromNewReference(capsule);
+    }
+
+    // Called by the tensor consumer (NumPy / PyTorch) when they are done with the data.
+    [System.Runtime.InteropServices.UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+    private static void DLPackDeleter(DLManagedTensor* tensor)
+    {
+        FreeExportContext((nint)tensor);
+    }
+
+    // Called by Python if the PyCapsule is GC-ed without being consumed.
+    // In that case the capsule name is still "dltensor"; after a consumer calls
+    // PyCapsule_GetPointer it renames it "used_dltensor", making GetPointer return null.
+    [System.Runtime.InteropServices.UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+    private static void CapsuleDestructor(IntPtr capsule)
+    {
+        // PyCapsule_IsValid returns 1 if the capsule still has the original name.
+        // After a consumer renames it to "used_dltensor" this returns 0 — skip cleanup
+        // (the DLPackDeleter already ran). This avoids calling PyCapsule_GetPointer
+        // which would set a Python error when the name has changed.
+        var namePtr = _capsuleNamePin.AddrOfPinnedObject();
+        if (NativeMethods.PyCapsule_IsValidRaw(capsule, namePtr) == 1)
+        {
+            var ptr = NativeMethods.PyCapsule_GetPointerRaw(capsule, namePtr);
+            if (ptr != IntPtr.Zero)
+            {
+                FreeExportContext(ptr);
+            }
+        }
+    }
+
+    private static void FreeExportContext(IntPtr blockPtr)
+    {
+        if (!_exportContexts.TryRemove(blockPtr, out var handle))
+        {
+            return; // already freed (double-call guard)
+        }
+
+        var ctx = (ExportContext)handle.Target!;
+        ctx.Pin.Dispose();
+        NativeMemory.Free((void*)ctx.Block);
+        handle.Free();
+    }
+
+    private static DLDataType GetDLDataType<T>()
+        where T : unmanaged
+    {
+        if (typeof(T) == typeof(byte))   { return new DLDataType { Code = (byte)DLDataTypeCode.Unsigned,      Bits = 8,  Lanes = 1 }; }
+        if (typeof(T) == typeof(sbyte))  { return new DLDataType { Code = (byte)DLDataTypeCode.SInt,          Bits = 8,  Lanes = 1 }; }
+        if (typeof(T) == typeof(short))  { return new DLDataType { Code = (byte)DLDataTypeCode.SInt,          Bits = 16, Lanes = 1 }; }
+        if (typeof(T) == typeof(ushort)) { return new DLDataType { Code = (byte)DLDataTypeCode.Unsigned,      Bits = 16, Lanes = 1 }; }
+        if (typeof(T) == typeof(int))    { return new DLDataType { Code = (byte)DLDataTypeCode.SInt,          Bits = 32, Lanes = 1 }; }
+        if (typeof(T) == typeof(uint))   { return new DLDataType { Code = (byte)DLDataTypeCode.Unsigned,      Bits = 32, Lanes = 1 }; }
+        if (typeof(T) == typeof(long))   { return new DLDataType { Code = (byte)DLDataTypeCode.SInt,          Bits = 64, Lanes = 1 }; }
+        if (typeof(T) == typeof(ulong))  { return new DLDataType { Code = (byte)DLDataTypeCode.Unsigned,      Bits = 64, Lanes = 1 }; }
+        if (typeof(T) == typeof(float))  { return new DLDataType { Code = (byte)DLDataTypeCode.FloatingPoint, Bits = 32, Lanes = 1 }; }
+        if (typeof(T) == typeof(double)) { return new DLDataType { Code = (byte)DLDataTypeCode.FloatingPoint, Bits = 64, Lanes = 1 }; }
+
+        throw new NotSupportedException(
+            $"Type '{typeof(T).Name}' is not supported for DLPack export.");
     }
 
     // ── Disposal ──────────────────────────────────────────────────────────

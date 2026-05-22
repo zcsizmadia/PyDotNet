@@ -190,6 +190,40 @@ public sealed unsafe class PyBuffer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Maps the buffer's format string to a <see cref="TensorDataType"/>.
+    /// Returns <see cref="TensorDataType.Unknown"/> for unrecognised formats.
+    /// </summary>
+    public TensorDataType DataType
+    {
+        get
+        {
+            var fmt = Format;
+            if (fmt is null)
+            {
+                return TensorDataType.Unknown;
+            }
+
+            // Strip leading endian/alignment prefix (<, >, =, @, !)
+            var f = fmt.TrimStart('<', '>', '=', '@', '!');
+            return f switch
+            {
+                "b"       => TensorDataType.Int8,
+                "B"       => TensorDataType.UInt8,
+                "h"       => TensorDataType.Int16,
+                "H"       => TensorDataType.UInt16,
+                "i" or "l" => TensorDataType.Int32,
+                "I" or "L" => TensorDataType.UInt32,
+                "q" or "n" => TensorDataType.Int64,
+                "Q" or "N" => TensorDataType.UInt64,
+                "e"       => TensorDataType.Float16,
+                "f"       => TensorDataType.Float32,
+                "d"       => TensorDataType.Float64,
+                _         => TensorDataType.Unknown,
+            };
+        }
+    }
+
     /// <inheritdoc />
     public void Dispose()
     {

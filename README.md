@@ -51,9 +51,10 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 |---|---|
 | **In-process embedding** | Loads `libpython` / `python3xx.dll` directly — no subprocess or IPC overhead |
 | **Zero-copy buffers** | Exposes Python's buffer protocol as `Span<T>` / `Memory<T>` |
-| **Zero-copy .NET → Python** | `PyMemoryView<T>` pins any `Memory<T>` and hands it to Python as a `memoryview` — no copy |
+| **Zero-copy .NET → Python** | `PyMemoryView<T>` pins any `Memory<T>` and hands it to Python as a `memoryview` — no copy; supports shaped N-D views and `ReadOnlyMemory<T>` |
 | **Zero-copy string reads** | `PyObject.UseUtf8Span()` gives direct access to Python's internal UTF-8 buffer — no string allocation |
-| **DLPack exchange** | Zero-copy tensor exchange via `__dlpack__()` (NumPy ≥ 1.22, PyTorch, CuPy, JAX, TF) |
+| **DLPack exchange** | Zero-copy tensor exchange via `__dlpack__()` (NumPy ≥ 1.22, PyTorch, CuPy, JAX, TF); plus `.NET → Python` export via `DLPackTensor.Export<T>()` |
+| **Buffer DataType detection** | `PyBuffer.DataType` maps the buffer format string to a `TensorDataType` enum — no numpy import needed |
 | **Array interface** | Reads `__array_interface__` and `__cuda_array_interface__` without importing NumPy |
 | **GPU compute libraries** | Call CuPy, nvmath-python, PyTorch, JAX, or any CUDA-accelerated library; inspect GPU tensor metadata via DLPack without a device copy |
 | **Async/await bridge** | `await fn.CallAsync<T>()` drives Python `asyncio` coroutines from .NET Tasks |
@@ -576,6 +577,16 @@ ws[0] = 99;
 byte[] copy = buf.ToArray<byte>();
 ```
 
+`PyBuffer.DataType` maps the buffer's format string to a `TensorDataType` enum — useful for type-safe dispatch without importing numpy:
+
+```csharp
+using var arr = interp.Evaluate("__import__('numpy').array([1.0], dtype='float32')");
+using var buf = arr.AsBuffer();
+
+Console.WriteLine(buf.Format);    // "f"
+Console.WriteLine(buf.DataType);  // TensorDataType.Float32
+```
+
 `PyBuffer` is disposed automatically. While it is live, the underlying Python buffer is pinned.
 
 ### .NET → Python (PyMemoryView)
@@ -619,6 +630,30 @@ For a **read-only** view (Python cannot write):
 
 ```csharp
 using var ro = PyMemoryView<int>.From(data.AsMemory(), readOnly: true);
+```
+
+For a **`ReadOnlyMemory<T>`** view (automatically read-only):
+
+```csharp
+ReadOnlyMemory<float> rom = GetReadOnlyData();
+using var mv = PyMemoryView<float>.From(rom);
+// Python sees a readonly memoryview — any write attempt raises TypeError.
+```
+
+For a **shaped N-dimensional** view, pass an explicit shape array:
+
+```csharp
+// Expose a flat 12-element float array as a 3×4 matrix to Python.
+var data = new float[12];
+using var mv = PyMemoryView<float>.From(data.AsMemory(), shape: [3L, 4L]);
+
+interp.Execute("""
+    def get_shape(v):
+        return v.shape
+    """);
+
+// Python sees memoryview with shape (3, 4) and C-contiguous strides.
+// No data is copied.
 ```
 
 > **Lifetime**: `PyMemoryView<T>` must be disposed **before** the backing `Memory<T>` is freed or moved. The `using` pattern ensures this when both live within the same scope.
@@ -683,9 +718,40 @@ Console.WriteLine(tensor.DeviceId);      // 0
 
 // Static helper — get device without acquiring a full DLPackTensor.
 var (deviceType, deviceId) = DLPackTensor.GetDevice(arr);
+
+// Copy tensor data into a managed array (CPU tensors only).
+float[] copy = tensor.ToArray<float>();
 ```
 
 On disposal, `DLPackTensor` calls the DLPack deleter, notifying the source framework that the memory is released.
+
+#### .NET → Python via DLPack (`Export<T>`)
+
+`DLPackTensor.Export<T>()` pins .NET memory and wraps it in a DLPack capsule consumable by `numpy.from_dlpack`, `torch.from_dlpack`, and any other DLPack-aware framework — zero copy in both directions.
+
+```csharp
+var data = new float[] { 1f, 2f, 3f, 4f, 5f, 6f };
+
+// Export as a 2×3 float32 matrix.
+using var capsule = DLPackTensor.Export(data.AsMemory(), shape: [2L, 3L]);
+
+// Inject into Python's __main__ globals and consume with numpy.
+using var main = interp.ImportModule("__main__");
+main.SetAttr("_cap", capsule);
+interp.Execute("""
+    import numpy as np
+    class _Wrap:
+        def __init__(self, c): self._c = c
+        def __dlpack__(self, stream=None): return self._c
+        def __dlpack_device__(self): return (1, 0)  # kDLCPU
+    _arr = np.from_dlpack(_Wrap(_cap))
+    # _arr.shape == (2, 3) — zero copy, backed by the .NET array
+    """);
+```
+
+> **Lifetime**: `capsule` must stay alive until Python has consumed it via `from_dlpack` (i.e. until the `using` block exits). After consumption, Python holds the only reference to the data; `.NET` disposal of `capsule` is a no-op.
+
+Supported element types for export: `byte`, `sbyte`, `short`, `ushort`, `int`, `uint`, `long`, `ulong`, `float`, `double`.
 
 ### Array interface
 
