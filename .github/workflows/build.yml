@@ -67,6 +67,7 @@ jobs:
         shell: bash
         run: |
           dotnet pack -c Release --no-build -o nupkgs src/PyDotNet/
+          dotnet pack -c Release --no-build -o nupkgs src/PyDotNet.NumPy/
 
       - name: Upload NuGet packages
         if: matrix.pack-nupkg == true
