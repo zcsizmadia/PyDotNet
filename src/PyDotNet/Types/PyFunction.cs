@@ -98,6 +98,18 @@ public sealed class PyFunction : PyObject
     }
 
     /// <summary>
+    /// Calls the Python async generator with positional and keyword arguments and streams its
+    /// values as an <see cref="IAsyncEnumerable{T}"/>.
+    /// </summary>
+    public IAsyncEnumerable<T> CallAsyncEnumerable<T>(
+        object?[] args,
+        IDictionary<string, object?> kwargs)
+    {
+        ArgumentNullException.ThrowIfNull(kwargs);
+        return AsyncBridge.StreamAsyncGenerator<T>(Handle, args, kwargs);
+    }
+
+    /// <summary>
     /// Returns the Python function's qualified name if available.
     /// </summary>
     public string? GetQualifiedName()

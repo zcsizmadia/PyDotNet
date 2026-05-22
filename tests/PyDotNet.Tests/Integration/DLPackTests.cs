@@ -127,5 +127,84 @@ public sealed class DLPackTests
 
         await Assert.That(true).IsTrue();
     }
+
+    // ── ToArray<T> ────────────────────────────────────────────────────────
+
+    [Test]
+    public async Task ToArray_Float32_ReturnsManagedCopy()
+    {
+        using var interp = await CreateNumpyInterpreterAsync();
+        using var np = interp.ImportModule("numpy");
+        using var arr = np.Call("array", new object[] { Float32Data }, new Dictionary<string, object?> { ["dtype"] = "float32" });
+
+        using var tensor = DLPackTensor.From(arr);
+        var copy = tensor.ToArray<float>();
+
+        await Assert.That(copy).IsEquivalentTo(Float32Data);
+    }
+
+    [Test]
+    public async Task ToArray_Int32_ReturnsManagedCopy()
+    {
+        using var interp = await CreateNumpyInterpreterAsync();
+        using var np = interp.ImportModule("numpy");
+        using var arr = np.Call("array", new object[] { IntData }, new Dictionary<string, object?> { ["dtype"] = "int32" });
+
+        using var tensor = DLPackTensor.From(arr);
+        var copy = tensor.ToArray<int>();
+
+        await Assert.That(copy).IsEquivalentTo(IntData);
+    }
+
+    // ── Export<T> (.NET → Python) ─────────────────────────────────────────
+
+    [Test]
+    public async Task Export_Float32_NumpyCanFromDlpack()
+    {
+        using var interp = await CreateNumpyInterpreterAsync();
+
+        var data = new float[] { 1f, 2f, 3f, 4f, 5f, 6f };
+        var mem = data.AsMemory();
+        using var capsule = DLPackTensor.Export(mem, [2L, 3L]);
+
+        // Inject the capsule into __main__ globals, then use a Python wrapper
+        // object whose __dlpack__ returns it (numpy.from_dlpack calls __dlpack__)
+        using var main = interp.ImportModule("__main__");
+        main.SetAttr("_capsule", capsule);
+        interp.Execute("""
+            import numpy as _np
+            class _Wrap:
+                def __init__(self, cap): self._cap = cap
+                def __dlpack__(self, stream=None): return self._cap
+                def __dlpack_device__(self): return (1, 0)  # kDLCPU=1
+            _arr = _np.from_dlpack(_Wrap(_capsule))
+            _sum = int(_arr.sum())
+            """);
+        using var sumObj = interp.Evaluate("_sum");
+
+        await Assert.That(sumObj.As<int>()).IsEqualTo(21);
+    }
+
+    [Test]
+    public async Task Export_ShapeMismatch_Throws()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        var data = new float[] { 1f, 2f, 3f };
+        var mem = data.AsMemory();
+
+        await Assert.That(() => DLPackTensor.Export(mem, [2L, 3L])).Throws<ArgumentException>();
+    }
+
+    [Test]
+    public async Task Export_EmptyShape_Throws()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        var data = new float[] { 1f };
+        var mem = data.AsMemory();
+
+        await Assert.That(() => DLPackTensor.Export(mem, [])).Throws<ArgumentException>();
+    }
 }
 

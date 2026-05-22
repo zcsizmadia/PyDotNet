@@ -138,6 +138,15 @@ internal static partial class NativeMethods
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern IntPtr PyUnicode_AsUTF8(IntPtr obj);
 
+    /// <summary>
+    /// Returns a pointer directly into the Python string's internal UTF-8 buffer and
+    /// stores the byte length (not character count) in <paramref name="size"/>.
+    /// The pointer is valid while the GIL is held and the string object is alive.
+    /// Returns <see cref="IntPtr.Zero"/> and sets an exception on error.
+    /// </summary>
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr PyUnicode_AsUTF8AndSize(IntPtr obj, out nint size);
+
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern nint PyUnicode_GetLength(IntPtr obj);
 
@@ -364,19 +373,64 @@ internal static partial class NativeMethods
         IntPtr capsule,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string? name);
 
+    /// <summary>Overload accepting a pre-pinned UTF-8 name pointer.</summary>
+    [DllImport(PythonDll, EntryPoint = "PyCapsule_GetPointer", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr PyCapsule_GetPointerRaw(IntPtr capsule, IntPtr namePtr);
+
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern int PyCapsule_IsValid(
         IntPtr capsule,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string? name);
 
+    /// <summary>Overload accepting a pre-pinned UTF-8 name pointer.</summary>
+    [DllImport(PythonDll, EntryPoint = "PyCapsule_IsValid", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern int PyCapsule_IsValidRaw(IntPtr capsule, IntPtr namePtr);
+
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern int PyCapsule_CheckExact(IntPtr obj);
+
+    /// <summary>
+    /// Creates a PyCapsule wrapping <paramref name="pointer"/> under the given <paramref name="name"/>.
+    /// <paramref name="destructor"/> is called when the capsule is GC-ed by Python; pass
+    /// <see cref="IntPtr.Zero"/> if no destructor is needed.
+    /// Returns a new reference.
+    /// </summary>
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr PyCapsule_New(
+        IntPtr pointer,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string? name,
+        IntPtr destructor);
+
+    /// <summary>Overload accepting a pre-pinned UTF-8 name pointer (avoids marshal lifetime issues).</summary>
+    [DllImport(PythonDll, EntryPoint = "PyCapsule_New", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr PyCapsule_NewRaw(
+        IntPtr pointer,
+        IntPtr namePtr,
+        IntPtr destructor);
 
     // ── sys module ─────────────────────────────────────────────────────────
 
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern IntPtr PySys_GetObject(
         [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
+
+    // ── Weak references ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Creates a new weak reference to <paramref name="ob"/>.
+    /// <paramref name="callback"/> may be <see cref="IntPtr.Zero"/> for no callback.
+    /// Returns a new reference, or null if <paramref name="ob"/> does not support
+    /// weak references (e.g. integers).
+    /// </summary>
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr PyWeakref_NewRef(IntPtr ob, IntPtr callback);
+
+    /// <summary>
+    /// Returns the referent of the weak reference as a <em>borrowed</em> reference.
+    /// Returns <c>Py_None</c> if the referent has been garbage-collected.
+    /// </summary>
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr PyWeakref_GetObject(IntPtr weakRef);
 
     // ── Version ────────────────────────────────────────────────────────────
 

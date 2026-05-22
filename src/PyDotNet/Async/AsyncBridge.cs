@@ -88,6 +88,33 @@ internal static class AsyncBridge
     }
 
     /// <summary>
+    /// Drives a coroutine object that has already been created (GIL NOT required from the caller).
+    /// <paramref name="coroutine"/> is a <em>stolen</em> reference — it will be released on
+    /// completion or error.
+    /// </summary>
+    internal static Task<T> RunCoroutineObjectAsync<T>(IntPtr coroutine)
+    {
+        return Task.Run(() =>
+        {
+            using var gil = new GilScope();
+            return RunCoroutineHandle<T>(coroutine); // steals reference
+        });
+    }
+
+    /// <summary>
+    /// Drives a coroutine object that has already been created, discarding the result.
+    /// <paramref name="coroutine"/> is a <em>stolen</em> reference.
+    /// </summary>
+    internal static Task RunCoroutineObjectAsync(IntPtr coroutine)
+    {
+        return Task.Run(() =>
+        {
+            using var gil = new GilScope();
+            RunCoroutineHandle<object?>(coroutine);
+        });
+    }
+
+    /// <summary>
     /// Calls <paramref name="pyCallable"/> with <paramref name="args"/>, treats the result as an
     /// async generator, and returns an <see cref="IAsyncEnumerable{T}"/> that streams its values.
     /// </summary>
@@ -95,7 +122,29 @@ internal static class AsyncBridge
         IntPtr pyCallable,
         object?[] args)
     {
-        return new AsyncGeneratorEnumerable<T>(pyCallable, args);
+        return new AsyncGeneratorEnumerable<T>(pyCallable, args, kwargs: null);
+    }
+
+    /// <summary>
+    /// Calls <paramref name="pyCallable"/> with positional and keyword arguments, treats the result as an
+    /// async generator, and returns an <see cref="IAsyncEnumerable{T}"/> that streams its values.
+    /// </summary>
+    internal static IAsyncEnumerable<T> StreamAsyncGenerator<T>(
+        IntPtr pyCallable,
+        object?[] args,
+        IDictionary<string, object?> kwargs)
+    {
+        return new AsyncGeneratorEnumerable<T>(pyCallable, args, kwargs);
+    }
+
+    /// <summary>
+    /// Wraps an already-created async iterator (owned reference) as an
+    /// <see cref="IAsyncEnumerable{T}"/>. The iterator is released when enumeration is disposed.
+    /// GIL must NOT be held by the caller.
+    /// </summary>
+    internal static IAsyncEnumerable<T> StreamFromAsyncIterator<T>(IntPtr asyncIter)
+    {
+        return new AsyncGeneratorEnumerable<T>(asyncIter);
     }
 
     // ── Synchronous helpers (called on thread-pool threads) ───────────────
@@ -288,10 +337,32 @@ internal static class AsyncBridge
     /// async iterator. GIL must be held by the caller.
     /// </summary>
     internal static IntPtr CreateAsyncIterator(IntPtr pyCallable, object?[] args)
+        => CreateAsyncIterator(pyCallable, args, kwargs: null);
+
+    /// <summary>
+    /// Calls <c>pyCallable(*args, **kwargs).__aiter__()</c> and returns a new owned reference to the
+    /// async iterator. GIL must be held by the caller.
+    /// </summary>
+    internal static IntPtr CreateAsyncIterator(
+        IntPtr pyCallable,
+        object?[] args,
+        IDictionary<string, object?>? kwargs)
     {
-        var argTuple = TypeConverter.ToTuple(args);
-        var genObj = NativeMethods.PyObject_CallObject(pyCallable, argTuple);
-        NativeMethods.Py_DecRef(argTuple);
+        IntPtr genObj;
+        if (kwargs is null || kwargs.Count == 0)
+        {
+            var argTuple = TypeConverter.ToTuple(args);
+            genObj = NativeMethods.PyObject_CallObject(pyCallable, argTuple);
+            NativeMethods.Py_DecRef(argTuple);
+        }
+        else
+        {
+            var argTuple = TypeConverter.ToTuple(args);
+            var kwDict = TypeConverter.ToDict(kwargs);
+            genObj = NativeMethods.PyObject_Call(pyCallable, argTuple, kwDict);
+            NativeMethods.Py_DecRef(argTuple);
+            NativeMethods.Py_DecRef(kwDict);
+        }
 
         if (genObj == IntPtr.Zero)
         {
@@ -327,6 +398,49 @@ internal static class AsyncBridge
         }
 
         return asyncIter;
+    }
+
+    /// <summary>
+    /// Calls <c>aclose()</c> on an async iterator to release Python-side resources.
+    /// Should be called when breaking out of an async loop early (i.e. not exhausting the generator).
+    /// GIL must be held by the caller. <paramref name="asyncIter"/> is a borrowed reference.
+    /// Errors from <c>aclose()</c> are suppressed — the caller is discarding the generator.
+    /// </summary>
+    internal static void CloseAsyncGenerator(IntPtr asyncIter)
+    {
+        var acloseAttr = NativeMethods.PyObject_GetAttrString(asyncIter, "aclose");
+        if (acloseAttr == IntPtr.Zero)
+        {
+            NativeMethods.PyErr_Clear();
+            return;
+        }
+
+        IntPtr coroutine;
+        try
+        {
+            var noArgs = NativeMethods.PyTuple_New(0);
+            coroutine = NativeMethods.PyObject_CallObject(acloseAttr, noArgs);
+            NativeMethods.Py_DecRef(noArgs);
+        }
+        finally
+        {
+            NativeMethods.Py_DecRef(acloseAttr);
+        }
+
+        if (coroutine == IntPtr.Zero)
+        {
+            NativeMethods.PyErr_Clear();
+            return;
+        }
+
+        try
+        {
+            RunCoroutineHandle<object?>(coroutine); // steals coroutine; drives aclose
+        }
+        catch
+        {
+            // Swallow — generator is being discarded; cleanup errors are not fatal.
+        }
     }
 
     /// <summary>
@@ -387,17 +501,33 @@ internal static class AsyncBridge
     private sealed class AsyncGeneratorEnumerable<T> : IAsyncEnumerable<T>
     {
         private readonly IntPtr _callable;
+        private readonly IntPtr _preCreatedIter; // non-Zero when iterator was created by caller
         private readonly object?[] _args;
+        private readonly IDictionary<string, object?>? _kwargs;
 
-        internal AsyncGeneratorEnumerable(IntPtr callable, object?[] args)
+        // Lazy-mode constructor: iterator will be created on first MoveNextAsync
+        internal AsyncGeneratorEnumerable(
+            IntPtr callable,
+            object?[] args,
+            IDictionary<string, object?>? kwargs)
         {
             _callable = callable;
             _args = args;
+            _kwargs = kwargs;
+        }
+
+        // Eager-mode constructor: caller provides an already-created owned asyncIter
+        internal AsyncGeneratorEnumerable(IntPtr preCreatedIter)
+        {
+            _preCreatedIter = preCreatedIter;
+            _args = Array.Empty<object?>();
         }
 
         public IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = default)
         {
-            return new AsyncGeneratorEnumerator<T>(_callable, _args, cancellationToken);
+            return _preCreatedIter != IntPtr.Zero
+                ? new AsyncGeneratorEnumerator<T>(_preCreatedIter, cancellationToken)
+                : new AsyncGeneratorEnumerator<T>(_callable, _args, _kwargs, cancellationToken);
         }
     }
 
@@ -405,16 +535,33 @@ internal static class AsyncBridge
     {
         private readonly IntPtr _callable;
         private readonly object?[] _args;
+        private readonly IDictionary<string, object?>? _kwargs;
         private readonly CancellationToken _ct;
         private IntPtr _asyncIter;  // owned reference; Zero before first MoveNext / after dispose
         private T _current = default!;
         private bool _started;
+        private bool _exhausted; // true when StopAsyncIteration was received (no aclose needed)
         private bool _disposed;
 
-        internal AsyncGeneratorEnumerator(IntPtr callable, object?[] args, CancellationToken ct)
+        // Lazy-mode: iterator is created on first MoveNextAsync
+        internal AsyncGeneratorEnumerator(
+            IntPtr callable,
+            object?[] args,
+            IDictionary<string, object?>? kwargs,
+            CancellationToken ct)
         {
             _callable = callable;
             _args = args;
+            _kwargs = kwargs;
+            _ct = ct;
+        }
+
+        // Eager-mode: iterator was already created by the caller (owned reference)
+        internal AsyncGeneratorEnumerator(IntPtr asyncIter, CancellationToken ct)
+        {
+            _asyncIter = asyncIter;
+            _started = true; // skip CreateAsyncIterator
+            _args = Array.Empty<object?>();
             _ct = ct;
         }
 
@@ -437,7 +584,7 @@ internal static class AsyncBridge
             if (!_started)
             {
                 _started = true;
-                _asyncIter = CreateAsyncIterator(_callable, _args);
+                _asyncIter = CreateAsyncIterator(_callable, _args, _kwargs);
             }
 
             if (_asyncIter == IntPtr.Zero)
@@ -448,6 +595,7 @@ internal static class AsyncBridge
             var hasValue = FetchNextItem<T>(_asyncIter, out var item);
             if (!hasValue)
             {
+                _exhausted = true;
                 return false;
             }
 
@@ -467,10 +615,19 @@ internal static class AsyncBridge
             if (_asyncIter != IntPtr.Zero)
             {
                 var handle = _asyncIter;
+                var needClose = _started && !_exhausted;
                 _asyncIter = IntPtr.Zero;
                 await Task.Run(() =>
                 {
                     using var gil = new GilScope();
+
+                    // Call aclose() so the generator's finally blocks and async context
+                    // managers run even when the consumer breaks out early.
+                    if (needClose)
+                    {
+                        CloseAsyncGenerator(handle);
+                    }
+
                     NativeMethods.Py_DecRef(handle);
                 }).ConfigureAwait(false);
             }

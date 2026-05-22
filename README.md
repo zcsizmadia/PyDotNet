@@ -8,6 +8,7 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 [![NuGet](https://img.shields.io/nuget/v/Kestrel.PathTrace.svg)](https://www.nuget.org/packages/PyDotNet)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![.NET: 8 | 9 | 10](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010-purple)
+![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)
 
 ---
 
@@ -22,6 +23,9 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 - [Working with Python objects](#working-with-python-objects)
 - [Type marshaling](#type-marshaling)
 - [Typed Python collections](#typed-python-collections)
+- [Tuple marshaling](#tuple-marshaling)
+- [Weak references](#weak-references)
+- [UTF-8 zero-copy string reads](#utf-8-zero-copy-string-reads)
 - [Zero-copy buffer access](#zero-copy-buffer-access)
   - [Python → .NET (buffer protocol)](#python--net-buffer-protocol)
   - [.NET → Python (PyMemoryView)](#net--python-pymemoryview)
@@ -34,11 +38,14 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
   - [Coroutines](#coroutines)
   - [Keyword arguments in async calls](#keyword-arguments-in-async-calls)
   - [Async generators (IAsyncEnumerable)](#async-generators-iasyncenumerable)
+  - [PyModule async methods](#pymodule-async-methods)
+  - [EvaluateAsync](#evaluateasync)
 - [Configuration](#configuration)
 - [Exception handling](#exception-handling)
 - [Thread safety and the GIL](#thread-safety-and-the-gil)
 - [Local development](#local-development)
 - [Platform support](#platform-support)
+- [Roadmap](#roadmap)
 
 ---
 
@@ -48,14 +55,21 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 |---|---|
 | **In-process embedding** | Loads `libpython` / `python3xx.dll` directly — no subprocess or IPC overhead |
 | **Zero-copy buffers** | Exposes Python's buffer protocol as `Span<T>` / `Memory<T>` |
-| **Zero-copy .NET → Python** | `PyMemoryView<T>` pins any `Memory<T>` and hands it to Python as a `memoryview` — no copy |
-| **DLPack exchange** | Zero-copy tensor exchange via `__dlpack__()` (NumPy ≥ 1.22, PyTorch, CuPy, JAX, TF) |
+| **Zero-copy .NET → Python** | `PyMemoryView<T>` pins any `Memory<T>` and hands it to Python as a `memoryview` — no copy; supports shaped N-D views and `ReadOnlyMemory<T>` |
+| **Zero-copy string reads** | `PyObject.UseUtf8Span()` gives direct access to Python's internal UTF-8 buffer — no string allocation |
+| **DLPack exchange** | Zero-copy tensor exchange via `__dlpack__()` (NumPy ≥ 1.22, PyTorch, CuPy, JAX, TF); plus `.NET → Python` export via `DLPackTensor.Export<T>()` |
+| **Buffer DataType detection** | `PyBuffer.DataType` maps the buffer format string to a `TensorDataType` enum — no numpy import needed |
 | **Array interface** | Reads `__array_interface__` and `__cuda_array_interface__` without importing NumPy |
 | **GPU compute libraries** | Call CuPy, nvmath-python, PyTorch, JAX, or any CUDA-accelerated library; inspect GPU tensor metadata via DLPack without a device copy |
 | **Async/await bridge** | `await fn.CallAsync<T>()` drives Python `asyncio` coroutines from .NET Tasks |
-| **Async generators** | `fn.CallAsyncEnumerable<T>()` streams Python async generators as `IAsyncEnumerable<T>` |
-| **Keyword arguments** | Pass `kwargs` to any Python callable via `Call(args, kwargs)` and `CallAsync(args, kwargs)` |
+| **Async generators** | `fn.CallAsyncEnumerable<T>()` and `module.CallAsyncEnumerable<T>()` stream Python async generators as `IAsyncEnumerable<T>`; supports kwargs; calls `aclose()` on early break |
+| **PyModule async** | `module.CallAsync<T>()`, `module.CallAsync()`, `module.CallAsyncEnumerable<T>()` — invoke coroutines and generators by name, without a `GetFunction` call |
+| **EvaluateAsync** | `interp.EvaluateAsync<T>(expr)` evaluates a Python expression and drives the resulting coroutine to completion |
+| **Keyword arguments** | Pass `kwargs` to any Python callable via `Call(args, kwargs)`, `CallAsync(args, kwargs)`, and `CallAsyncEnumerable(args, kwargs)` |
 | **Typed collections** | `PyList<T>` and `PyDict<TKey,TValue>` — strongly-typed wrappers with `IReadOnlyList<T>` / `IReadOnlyDictionary<TKey,TValue>` |
+| **Tuple marshaling** | `ValueTuple<T1…T7>` is automatically converted to/from Python tuples via `ToPython()`, `As<T>()`, and `Call<T>()` |
+| **Weak references** | `PyWeakRef<T>` / `PyWeakRef.Create<T>()` — track Python objects without preventing GC |
+| **Finalizer-safe GC** | `PyDecRefQueue` background thread drains abandoned object handles from .NET finalizers without holding the GIL inline |
 | **Full type marshaling** | Bidirectional conversion: primitives, strings, dates, collections, complex numbers |
 | **GIL-safe threading** | Automatic GIL acquire/release via `GilScope`; free-threaded Python 3.13+ detected |
 | **Auto-discovery** | Finds the Python shared library from PATH, registry (Windows), or environment variable |
@@ -428,6 +442,119 @@ using var cfg = PyDict<string, object>.Wrap(pyConfig);
 
 ---
 
+## Tuple marshaling
+
+Any .NET `ValueTuple<T1…T7>` is automatically converted to a Python `tuple` when passed to
+Python, and Python tuples can be converted back to ValueTuples via `As<T>()`.
+
+### .NET → Python
+
+```csharp
+interp.Execute("def tup_len(t): return len(t)");
+using var main = interp.ImportModule("__main__");
+using var fn = main.GetFunction("tup_len");
+
+long len = fn.Call<long>((1, "hello", 3.14));   // ValueTuple<int,string,double>
+Console.WriteLine(len);  // 3
+```
+
+### Python → .NET
+
+```csharp
+using var pyTuple = interp.Evaluate("(42, 'world', True)");
+var (n, s, b) = pyTuple.As<(long, string, bool)>();
+Console.WriteLine($"{n} {s} {b}");   // 42 world True
+```
+
+### Dynamic detection
+
+When deserialising with `As<object>()`, a Python `tuple` is returned as `object?[]`:
+
+```csharp
+using var pyTuple = interp.Evaluate("(1, 2, 3)");
+var dyn = pyTuple.As<object>();     // object?[] { 1L, 2L, 3L }
+```
+
+---
+
+## Weak references
+
+`PyWeakRef<T>` wraps a Python `weakref.ref` — it tracks a Python object without keeping it
+alive. Use it to implement observer patterns, caches, or any scenario where you want to know
+whether a Python object still exists without pinning it in memory.
+
+```csharp
+using var obj  = interp.Evaluate("Target()");   // user-defined class; object() doesn't support weakref in Python 3.12+
+using var weak = PyWeakRef.Create(obj);   // PyWeakRef.Create<T>(T target)
+
+Console.WriteLine(weak.IsAlive);           // True
+
+using var back = weak.TryGetTarget();      // T? — null if GC'd
+Console.WriteLine(back is not null);       // True
+```
+
+When the last strong reference is released and Python GC runs, `IsAlive` returns `false` and
+`TryGetTarget()` returns `null`:
+
+```csharp
+PyWeakRef<PyObject>? weak;
+{
+    using var shortLived = interp.Evaluate("Target()");
+    weak = PyWeakRef.Create(shortLived);
+} // shortLived disposed → ref-count drops to 0
+
+interp.Execute("import gc; gc.collect()");
+
+Console.WriteLine(weak.IsAlive);           // False
+Console.WriteLine(weak.TryGetTarget());    // null
+weak.Dispose();
+```
+
+> **Note:** Python `int`, `float`, `str`, and other interned / cached types do **not** support
+> weak references. Passing them to `PyWeakRef.Create` throws `PyInteropException`.
+
+---
+
+## UTF-8 zero-copy string reads
+
+`PyObject.UseUtf8Span(Utf8SpanAction)` gives you a `ReadOnlySpan<byte>` pointing directly
+into CPython's internal UTF-8 buffer. No string allocation, no copying.
+
+The callback is invoked while the GIL is held; the span is only valid inside the callback.
+
+```csharp
+using var pyStr = interp.Evaluate("'hello world'");
+
+pyStr.UseUtf8Span(utf8 =>
+{
+    // Zero-allocation scan
+    int spaces = 0;
+    foreach (var b in utf8)
+        if (b == (byte)' ') spaces++;
+
+    Console.WriteLine($"Spaces: {spaces}");   // 1
+});
+```
+
+**Common use cases:**
+- Hashing Python strings without allocating a .NET `string`
+- Passing Python string content directly to `System.Text.Encoding.UTF8.GetString(span)` for
+  one-shot decoding
+- Computing checksums, pattern scanning, or protocol parsing over large Python strings with
+  zero heap pressure
+
+```csharp
+// SHA-256 of a Python string — zero allocation
+using var secret = interp.Evaluate("'my-api-key'");
+secret.UseUtf8Span(utf8 =>
+{
+    var hash = SHA256.HashData(utf8);
+    Console.WriteLine(Convert.ToHexString(hash));
+});
+```
+
+---
+
 ## Zero-copy buffer access
 
 ### Python → .NET (buffer protocol)
@@ -454,6 +581,16 @@ ws[0] = 99;
 
 // Managed copy for safe off-lifetime use.
 byte[] copy = buf.ToArray<byte>();
+```
+
+`PyBuffer.DataType` maps the buffer's format string to a `TensorDataType` enum — useful for type-safe dispatch without importing numpy:
+
+```csharp
+using var arr = interp.Evaluate("__import__('numpy').array([1.0], dtype='float32')");
+using var buf = arr.AsBuffer();
+
+Console.WriteLine(buf.Format);    // "f"
+Console.WriteLine(buf.DataType);  // TensorDataType.Float32
 ```
 
 `PyBuffer` is disposed automatically. While it is live, the underlying Python buffer is pinned.
@@ -499,6 +636,30 @@ For a **read-only** view (Python cannot write):
 
 ```csharp
 using var ro = PyMemoryView<int>.From(data.AsMemory(), readOnly: true);
+```
+
+For a **`ReadOnlyMemory<T>`** view (automatically read-only):
+
+```csharp
+ReadOnlyMemory<float> rom = GetReadOnlyData();
+using var mv = PyMemoryView<float>.From(rom);
+// Python sees a readonly memoryview — any write attempt raises TypeError.
+```
+
+For a **shaped N-dimensional** view, pass an explicit shape array:
+
+```csharp
+// Expose a flat 12-element float array as a 3×4 matrix to Python.
+var data = new float[12];
+using var mv = PyMemoryView<float>.From(data.AsMemory(), shape: [3L, 4L]);
+
+interp.Execute("""
+    def get_shape(v):
+        return v.shape
+    """);
+
+// Python sees memoryview with shape (3, 4) and C-contiguous strides.
+// No data is copied.
 ```
 
 > **Lifetime**: `PyMemoryView<T>` must be disposed **before** the backing `Memory<T>` is freed or moved. The `using` pattern ensures this when both live within the same scope.
@@ -563,9 +724,40 @@ Console.WriteLine(tensor.DeviceId);      // 0
 
 // Static helper — get device without acquiring a full DLPackTensor.
 var (deviceType, deviceId) = DLPackTensor.GetDevice(arr);
+
+// Copy tensor data into a managed array (CPU tensors only).
+float[] copy = tensor.ToArray<float>();
 ```
 
 On disposal, `DLPackTensor` calls the DLPack deleter, notifying the source framework that the memory is released.
+
+#### .NET → Python via DLPack (`Export<T>`)
+
+`DLPackTensor.Export<T>()` pins .NET memory and wraps it in a DLPack capsule consumable by `numpy.from_dlpack`, `torch.from_dlpack`, and any other DLPack-aware framework — zero copy in both directions.
+
+```csharp
+var data = new float[] { 1f, 2f, 3f, 4f, 5f, 6f };
+
+// Export as a 2×3 float32 matrix.
+using var capsule = DLPackTensor.Export(data.AsMemory(), shape: [2L, 3L]);
+
+// Inject into Python's __main__ globals and consume with numpy.
+using var main = interp.ImportModule("__main__");
+main.SetAttr("_cap", capsule);
+interp.Execute("""
+    import numpy as np
+    class _Wrap:
+        def __init__(self, c): self._c = c
+        def __dlpack__(self, stream=None): return self._c
+        def __dlpack_device__(self): return (1, 0)  # kDLCPU
+    _arr = np.from_dlpack(_Wrap(_cap))
+    # _arr.shape == (2, 3) — zero copy, backed by the .NET array
+    """);
+```
+
+> **Lifetime**: `capsule` must stay alive until Python has consumed it via `from_dlpack` (i.e. until the `using` block exits). After consumption, Python holds the only reference to the data; `.NET` disposal of `capsule` is a no-op.
+
+Supported element types for export: `byte`, `sbyte`, `short`, `ushort`, `int`, `uint`, `long`, `ulong`, `float`, `double`.
 
 ### Array interface
 
@@ -783,13 +975,82 @@ await foreach (var tick in tickerFn.CallAsyncEnumerable<object>("AAPL", 5))
 }
 ```
 
-Early break is safe — the generator is cleaned up on `DisposeAsync`:
+Keyword arguments are supported on `CallAsyncEnumerable<T>` too:
+
+```csharp
+await foreach (var item in tickerFn.CallAsyncEnumerable<object>(
+    args:   ["AAPL"],
+    kwargs: new Dictionary<string, object?> { ["count"] = 10 }))
+{
+    Console.WriteLine(item);
+}
+```
+
+Early break is safe — `aclose()` is automatically called on the async generator so Python
+`finally` blocks and async context managers run correctly:
 
 ```csharp
 await foreach (var item in fn.CallAsyncEnumerable<int>(1000))
 {
-    if (item > 9) break;   // disposes the iterator cleanly
+    if (item > 9) break;   // aclose() called: Python finally block runs
 }
+```
+
+### PyModule async methods
+
+Call coroutines and async generators **directly on a `PyModule`** without getting a `PyFunction` first:
+
+```csharp
+using var module = interp.ImportModule("__main__");
+
+// Coroutine → Task<T>
+int result = await module.CallAsync<int>("add_async", 10, 32);
+
+// Coroutine with kwargs → Task<T>
+string msg = await module.CallAsync<string>(
+    "greet",
+    args:   ["Alice"],
+    kwargs: new Dictionary<string, object?> { ["greeting"] = "Hi" });
+
+// Void coroutine → Task
+await module.CallAsync("fire_and_forget", "payload");
+
+// Async generator → IAsyncEnumerable<T>
+await foreach (var v in module.CallAsyncEnumerable<int>("count_up", 5))
+{
+    Console.WriteLine(v);
+}
+
+// Async generator with kwargs → IAsyncEnumerable<T>
+await foreach (var v in module.CallAsyncEnumerable<int>(
+    "count_range",
+    args:   [],
+    kwargs: new Dictionary<string, object?> { ["start"] = 2, ["stop"] = 10, ["step"] = 2 }))
+{
+    Console.WriteLine(v);
+}
+```
+
+### EvaluateAsync
+
+Drive a coroutine created via a Python expression string:
+
+```csharp
+interp.Execute("""
+    import asyncio
+
+    async def async_pow(base, exp):
+        await asyncio.sleep(0)
+        return base ** exp
+
+    _pending = async_pow(3, 10)
+    """);
+
+// Evaluate the expression and drive the resulting coroutine
+long result = await interp.EvaluateAsync<long>("_pending");    // 59049
+
+// Or inline:
+long inline = await interp.EvaluateAsync<long>("async_pow(2, 8)");  // 256
 ```
 
 ---
@@ -996,3 +1257,70 @@ dotnet format
 | macOS | x64, Apple Silicon | 3.11, 3.12, 3.13, 3.14 | Tested in CI |
 
 CI runs the full test suite across all three .NET TFMs (net8.0, net9.0, net10.0) and all four Python versions on every push.
+
+---
+
+## Roadmap
+
+Items below are planned or under active investigation. Rough priority order — earlier items are closer to being started.
+
+### Zero-copy DataFrame interop
+
+A first-class bridge for columnar data between .NET and Python without any intermediate copies:
+
+- `PyArrowTable` wrapping `pyarrow.Table` with zero-copy column access via the C Data Interface
+- Bidirectional Pandas `DataFrame` ↔ `RecordBatch` exchange
+- Polars `LazyFrame` sink / source so .NET can push and pull data from a Polars pipeline
+- Apache Arrow Flight RPC support for large distributed transfers
+
+### Advanced async patterns
+
+The core async bridge is complete. Next steps:
+
+- **Cancellation propagation** — map `CancellationToken` cancellations to Python `asyncio` task cancellation
+- **`asyncio.Queue` bridge** — expose a Python `asyncio.Queue` as a .NET `Channel<T>` (backpressure-aware)
+- **Structured concurrency** — wrap Python `asyncio.TaskGroup` (3.11+) so .NET can await a group of Python sub-tasks
+- **`async for` with timeouts** — per-item timeout on `IAsyncEnumerable<T>`
+
+### NativeAOT embedding
+
+Make PyDotNet usable in NativeAOT-published apps:
+
+- Replace `System.Reflection` / `DynamicMethod` paths in the marshaling layer with source-generated equivalents
+- Trim analysis annotations so the linker can safely remove unused converter paths
+- Verified publish profiles for `win-x64`, `linux-x64`, `linux-arm64`
+
+> **Note:** CPython itself is not AOT-compatible; this item is about making the *host side* (PyDotNet) AOT-safe so it can load and call `libpython` from a trimmed binary.
+
+### Typed package plugins
+
+Strongly-typed, discoverable C# APIs for the most popular Python packages — generated from Python type stubs (`.pyi`) at design time:
+
+| Package | Goal |
+|---------|------|
+| **NumPy** | `PyArray<T>` with LINQ-style operators, `ndarray` shape/dtype awareness |
+| **Pandas** | `PyDataFrame`, `PySeries` with column indexer and iterator |
+| **Polars** | `PyLazyFrame`, push/pull from `LazyFrame` plans |
+| **scikit-learn** | `PyEstimator<TInput, TOutput>` fit/predict/transform wrapper |
+| **PyTorch** | `PyTensor<T>` with grad tracking, device movement, and DLPack export |
+
+Long-term, a **source generator** will generate these wrappers automatically from any `.pyi` stub file, so users can create typed wrappers for their own packages.
+
+### Visualization bridge
+
+Render Python visualization libraries inside .NET UI frameworks without a browser round-trip:
+
+- **Matplotlib** → render to `byte[]` (PNG/SVG) or `System.Drawing.Bitmap` from any thread
+- **Plotly** → capture the HTML/JSON output and display in a WebView2 / MAUI `WebView`
+- **Streamlit** / **Gradio** → launch in a side-process and embed via iframe in Blazor
+- An `IPlotRenderer` abstraction so WPF, WinForms, MAUI, and Avalonia apps share the same API
+
+### Deep GPU interop
+
+Building on the existing DLPack and `__cuda_array_interface__` support:
+
+- **CUDA stream synchronization** — associate .NET async operations with CUDA streams so compute and I/O can overlap
+- **Device memory access** — read/write `cuMemAlloc` buffers from .NET without a device→host copy
+- **Multi-GPU routing** — inspect device ordinals from DLPack metadata and fan work out across GPUs
+- **NVIDIA cuSPARSE / cuBLAS wrappers** — call into Python math libraries with pre-staged GPU tensors
+- **Unified memory (`cudaMallocManaged`)** — share a single allocation across .NET, Python, and CUDA kernels

@@ -106,6 +106,11 @@ public static class PyRuntime
             // _mainThreadState.)
             var gilState = NativeMethods.PyGILState_Ensure();
 
+            // Drain any handles enqueued by object finalizers while the GIL is held.
+            // Must happen before ClearAll() to avoid double-free if a finalizer races
+            // with the registry sweep.
+            PyDecRefQueue.StopAndDrain();
+
             // Release all live Python object handles while the GIL is held.
             // ForceReleaseHandle() calls GC.SuppressFinalize on every object, so
             // no .NET finalizers will later try to call Py_DecRef after we free

@@ -128,6 +128,110 @@ public sealed unsafe class PyMemoryView<T> : IDisposable
         }
     }
 
+    /// <summary>
+    /// Pins <paramref name="memory"/> and creates a read-only Python <c>memoryview</c> over it.
+    /// </summary>
+    public static PyMemoryView<T> From(ReadOnlyMemory<T> memory)
+    {
+        // MemoryMarshal.AsMemory is safe here because we set ReadOnly=1 on the Python side,
+        // preventing Python code from writing through the view.
+        return From(MemoryMarshal.AsMemory(memory), readOnly: true);
+    }
+
+    /// <summary>
+    /// Pins <paramref name="memory"/> and creates an N-dimensional Python <c>memoryview</c>
+    /// with the given <paramref name="shape"/> (C-contiguous strides are computed automatically).
+    /// </summary>
+    /// <param name="memory">Flat memory region; must contain exactly the product of all shape dimensions.</param>
+    /// <param name="shape">Length of each dimension (e.g. <c>[3, 4]</c> for a 3×4 matrix).</param>
+    /// <param name="readOnly">When <see langword="true"/> the view is read-only from Python.</param>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="shape"/> is empty or its product does not equal <paramref name="memory"/>.Length.
+    /// </exception>
+    public static PyMemoryView<T> From(Memory<T> memory, long[] shape, bool readOnly = false)
+    {
+        ArgumentNullException.ThrowIfNull(shape);
+        if (shape.Length == 0)
+        {
+            throw new ArgumentException("Shape must have at least one dimension.", nameof(shape));
+        }
+
+        var total = 1L;
+        foreach (var d in shape)
+        {
+            total *= d;
+        }
+
+        if (total != memory.Length)
+        {
+            throw new ArgumentException(
+                $"Shape total elements ({total}) does not match memory length ({memory.Length}).",
+                nameof(shape));
+        }
+
+        var ndim = shape.Length;
+        var pin = memory.Pin();
+        bool pinReleased = false;
+
+        // Layout: PyBufferStruct | nint[ndim] shape | nint[ndim] strides | 2 bytes (format + null)
+        var structSize = sizeof(PyBufferStruct);
+        var totalSize = (nuint)(structSize + ndim * sizeof(nint) + ndim * sizeof(nint) + 2);
+        var block = (byte*)NativeMemory.AllocZeroed(totalSize);
+
+        try
+        {
+            var bufView  = (PyBufferStruct*)block;
+            var shapePtr = (nint*)(block + structSize);
+            var stridePtr = (nint*)(block + structSize + ndim * sizeof(nint));
+            var formatPtr = block + structSize + 2 * ndim * sizeof(nint);
+
+            bufView->Buf = pin.Pointer;
+            bufView->Obj = IntPtr.Zero;
+            bufView->Len = (nint)((nuint)memory.Length * (nuint)sizeof(T));
+            bufView->ItemSize = sizeof(T);
+            bufView->ReadOnly = readOnly ? 1 : 0;
+            bufView->NDim = ndim;
+            bufView->Format = formatPtr;
+            bufView->Shape = shapePtr;
+            bufView->Strides = stridePtr;
+            bufView->SubOffsets = null;
+            bufView->Internal = null;
+
+            // C-contiguous strides: stride[i] = sizeof(T) * product(shape[i+1..ndim-1])
+            var stride = (nint)sizeof(T);
+            for (var i = ndim - 1; i >= 0; i--)
+            {
+                shapePtr[i] = (nint)shape[i];
+                stridePtr[i] = stride;
+                stride *= (nint)shape[i];
+            }
+
+            formatPtr[0] = GetFormatChar();
+            formatPtr[1] = 0;
+
+            using var gil = new GilScope();
+            var pyHandle = NativeMethods.PyMemoryView_FromBuffer(bufView);
+            if (pyHandle == IntPtr.Zero)
+            {
+                PythonException.ThrowIfPythonErrorOccurred();
+                throw new PyInteropException("Failed to create shaped Python memoryview.");
+            }
+
+            pinReleased = true;
+            return new PyMemoryView<T>(block, pin, PyObject.FromNewReference(pyHandle));
+        }
+        catch
+        {
+            NativeMemory.Free(block);
+            if (!pinReleased)
+            {
+                pin.Dispose();
+            }
+
+            throw;
+        }
+    }
+
     // ── IDisposable ───────────────────────────────────────────────────────
 
     /// <summary>

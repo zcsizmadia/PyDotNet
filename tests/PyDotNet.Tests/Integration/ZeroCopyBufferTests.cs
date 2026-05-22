@@ -1,5 +1,6 @@
 using PyDotNet.Runtime;
 using PyDotNet.Tests.Infrastructure;
+using PyDotNet.Types;
 
 namespace PyDotNet.Tests.Integration;
 
@@ -264,5 +265,63 @@ public sealed class ZeroCopyBufferTests
 
         await Assert.That(b0).IsEqualTo(0x0D);
         await Assert.That(b1).IsEqualTo(0x0E);
+    }
+
+    // ── PyBuffer.DataType ─────────────────────────────────────────────────
+
+    [Test]
+    public async Task Buffer_DataType_ByteArray_IsUInt8()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        using var ba = interp.Evaluate("bytearray(b'\\x01\\x02')");
+        using var buffer = ba.AsBuffer();
+
+        await Assert.That((int)buffer.DataType).IsEqualTo((int)TensorDataType.UInt8);
+    }
+
+    [Test]
+    public async Task Buffer_DataType_NumpyFloat32_IsFloat32()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+
+        try
+        {
+            interp.ImportModule("numpy").Dispose();
+        }
+        catch
+        {
+            throw new TUnit.Core.Exceptions.SkipTestException("numpy not available");
+        }
+
+        using var arr = interp.Evaluate("__import__('numpy').array([1.0, 2.0], dtype='float32')");
+        using var buffer = arr.AsBuffer();
+
+        await Assert.That((int)buffer.DataType).IsEqualTo((int)TensorDataType.Float32);
+    }
+
+    [Test]
+    public async Task Buffer_DataType_NumpyFloat64_IsFloat64()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+
+        try
+        {
+            interp.ImportModule("numpy").Dispose();
+        }
+        catch
+        {
+            throw new TUnit.Core.Exceptions.SkipTestException("numpy not available");
+        }
+
+        using var arr = interp.Evaluate("__import__('numpy').array([1.0, 2.0], dtype='float64')");
+        using var buffer = arr.AsBuffer();
+
+        await Assert.That((int)buffer.DataType).IsEqualTo((int)TensorDataType.Float64);
     }
 }

@@ -195,4 +195,57 @@ public sealed class MemoryViewTests
 
         await Assert.That(() => _ = mv.PyObject).Throws<ObjectDisposedException>();
     }
+
+    // ── ReadOnlyMemory<T> export ──────────────────────────────────────────
+
+    [Test]
+    public async Task PyMemoryView_FromReadOnlyMemory_PythonCanRead()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        var data = new int[] { 7, 8, 9 };
+        ReadOnlyMemory<int> rom = data;
+        using var mv = PyMemoryView<int>.From(rom);
+
+        interp.Execute("""
+            def read_first(view):
+                return view[0]
+            """);
+        using var pv = mv.PyObject;
+        using var module = interp.ImportModule("__main__");
+        using var result = module.Call("read_first", pv);
+
+        await Assert.That(result.As<int>()).IsEqualTo(7);
+    }
+
+    // ── Shaped N-D export ─────────────────────────────────────────────────
+
+    [Test]
+    public async Task PyMemoryView_Shaped2D_PythonSeesCorrectShape()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        var data = new float[] { 1f, 2f, 3f, 4f, 5f, 6f };
+        using var mv = PyMemoryView<float>.From(data.AsMemory(), [2L, 3L]);
+
+        interp.Execute("""
+            def get_ndim(view):
+                return len(view.shape)
+            def get_shape0(view):
+                return view.shape[0]
+            def get_shape1(view):
+                return view.shape[1]
+            """);
+        using var pv = mv.PyObject;
+        using var module = interp.ImportModule("__main__");
+        using var ndimObj = module.Call("get_ndim", pv);
+        using var s0Obj = module.Call("get_shape0", pv);
+        using var s1Obj = module.Call("get_shape1", pv);
+
+        await Assert.That(ndimObj.As<int>()).IsEqualTo(2);
+        await Assert.That(s0Obj.As<int>()).IsEqualTo(2);
+        await Assert.That(s1Obj.As<int>()).IsEqualTo(3);
+    }
 }

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
+using PyDotNet.Async;
 using PyDotNet.Exceptions;
 using PyDotNet.Native;
 using PyDotNet.Types;
@@ -88,6 +89,35 @@ public sealed class PyInterpreter : IDisposable
         }
 
         return PyObject.FromNewReference(result);
+    }
+
+    /// <summary>
+    /// Evaluates a Python coroutine expression and drives it to completion, returning the result.
+    /// The expression must resolve to a coroutine object (e.g. <c>my_async_func(arg)</c>).
+    /// </summary>
+    /// <typeparam name="T">The expected return type of the coroutine.</typeparam>
+    /// <param name="expression">A valid Python expression that produces a coroutine.</param>
+    public Task<T> EvaluateAsync<T>(string expression)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(expression);
+        EnsureNotDisposed();
+        PyRuntime.EnsureInitialized();
+
+        IntPtr coroutine;
+        using (var gil = new GilScope())
+        {
+            var mainModule = NativeMethods.PyImport_AddModule("__main__"); // borrowed
+            var globals = NativeMethods.PyModule_GetDict(mainModule);      // borrowed
+
+            coroutine = NativeMethods.PyRun_String(expression, PyConstants.EvalInput, globals, globals);
+            if (coroutine == IntPtr.Zero)
+            {
+                PythonException.ThrowIfPythonErrorOccurred();
+                throw new PyRuntimeException($"Failed to evaluate expression: {expression}");
+            }
+        }
+
+        return AsyncBridge.RunCoroutineObjectAsync<T>(coroutine);
     }
 
     /// <summary>
