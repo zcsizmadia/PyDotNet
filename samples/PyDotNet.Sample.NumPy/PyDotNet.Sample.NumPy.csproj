@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>$(DefaultTargetFramework)</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>PyDotNet.Sample.NumPy</RootNamespace>
+    <AssemblyName>PyDotNet.Sample.NumPy</AssemblyName>
+    <Description>NumPy interop sample — zero-copy, async reducers, matrix operations.</Description>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/PyDotNet.NumPy/PyDotNet.NumPy.csproj" />
+  </ItemGroup>
+
+</Project>

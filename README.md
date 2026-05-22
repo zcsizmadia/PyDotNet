@@ -45,6 +45,7 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 - [Thread safety and the GIL](#thread-safety-and-the-gil)
 - [Local development](#local-development)
 - [Platform support](#platform-support)
+- [Plugins](#plugins)
 - [Roadmap](#roadmap)
 
 ---
@@ -1259,6 +1260,19 @@ dotnet format
 CI runs the full test suite across all three .NET TFMs (net8.0, net9.0, net10.0) and all four Python versions on every push.
 
 ---
+
+## Plugins
+
+Typed, idiomatic C# wrappers for popular Python packages, built on top of the PyDotNet core.
+Each plugin is a separate NuGet package with zero-copy data sharing, async reducers, and full XML-doc IntelliSense.
+
+| Plugin | Package | Status | Docs |
+|--------|---------|--------|------|
+| **NumPy** | `PyDotNet.NumPy` | ✅ Released | [docs/numpy.md](docs/numpy.md) |
+| **Pandas + scikit-learn** | `PyDotNet.DataFrames` | 🗓 Planned | — |
+| **PyTorch** | `PyDotNet.Torch` | 🗓 Planned | — |
+| **LangChain** | `PyDotNet.LangChain` | 🗓 Planned | — |
+| **Matplotlib** | `PyDotNet.Matplotlib` | 🗓 Planned | — |
 
 ## Roadmap
 
