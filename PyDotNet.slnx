@@ -8,6 +8,7 @@
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/PyDotNet.Sample.Basic/PyDotNet.Sample.Basic.csproj" />
+    <Project Path="samples/PyDotNet.Sample.Gpu/PyDotNet.Sample.Gpu.csproj" />
     <Project Path="samples/PyDotNet.Sample.ZeroCopy/PyDotNet.Sample.ZeroCopy.csproj" />
     <Project Path="samples/PyDotNet.Sample.Async/PyDotNet.Sample.Async.csproj" />
   </Folder>

@@ -26,11 +26,12 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
   - [PyTensor](#pytensor)
   - [DLPack](#dlpack)
   - [Array interface](#array-interface)
+- [GPU-accelerated libraries](#gpu-accelerated-libraries)
 - [Async/await bridge](#asyncawait-bridge)
 - [Configuration](#configuration)
 - [Exception handling](#exception-handling)
 - [Thread safety and the GIL](#thread-safety-and-the-gil)
-- [Building from source](#building-from-source)
+- [Local development](#local-development)
 - [Platform support](#platform-support)
 
 ---
@@ -43,6 +44,7 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 | **Zero-copy buffers** | Exposes Python's buffer protocol as `Span<T>` / `Memory<T>` |
 | **DLPack exchange** | Zero-copy tensor exchange via `__dlpack__()` (NumPy ≥ 1.22, PyTorch, CuPy, JAX, TF) |
 | **Array interface** | Reads `__array_interface__` and `__cuda_array_interface__` without importing NumPy |
+| **GPU compute libraries** | Call CuPy, nvmath-python, PyTorch, JAX, or any CUDA-accelerated library; inspect GPU tensor metadata via DLPack without a device copy |
 | **Async/await bridge** | `await fn.CallAsync<T>()` drives Python `asyncio` coroutines from .NET Tasks |
 | **Full type marshaling** | Bidirectional conversion: primitives, strings, dates, collections, complex numbers |
 | **GIL-safe threading** | Automatic GIL acquire/release via `GilScope`; free-threaded Python 3.13+ detected |
@@ -442,6 +444,7 @@ On disposal, `DLPackTensor` calls the DLPack deleter, notifying the source frame
 
 ### Array interface
 
+
 `ArrayInterfaceInfo` reads `__array_interface__` (CPU) or `__cuda_array_interface__` (CUDA/CuPy) without requiring NumPy to be imported at the .NET level.
 
 ```csharp
@@ -462,6 +465,107 @@ if (info is not null)
 // CUDA array (CuPy, etc.).
 ArrayInterfaceInfo? cudaInfo = ArrayInterfaceInfo.TryReadCuda(arr);
 ```
+
+---
+
+## GPU-accelerated libraries
+
+> **Requires** a CUDA-capable GPU, the CUDA toolkit, and the Python packages below.
+> The [`PyDotNet.Sample.Gpu`](samples/PyDotNet.Sample.Gpu/Program.cs) sample detects the
+> GPU at runtime and falls back to NumPy on CPU automatically, so it runs on every machine.
+
+PyDotNet does not limit you to CPU workloads. [CuPy](https://cupy.dev/),
+[nvmath-python](https://docs.nvidia.com/nvmath-python/), PyTorch, JAX, and any other
+CUDA-accelerated library are called identically to their CPU counterparts. Data can
+stay on the GPU across multiple Python calls; bring it back only when you need a `Span<T>`.
+
+### Install
+
+```bash
+pip install cupy-cuda12x                  # CuPy for CUDA 12
+pip install "nvmath-python[cu12]"         # NVIDIA nvmath for CUDA 12
+```
+
+### GPU/CPU dispatch pattern
+
+Define a shared `xp` alias and a `_to_cpu()` helper once; all subsequent calls dispatch
+transparently to GPU or CPU:
+
+```csharp
+interp.Execute("""
+    import numpy as np
+
+    _has_gpu = False
+    try:
+        import cupy as cp
+        if cp.cuda.runtime.getDeviceCount() > 0:
+            _has_gpu = True
+    except Exception:
+        pass
+
+    xp = cp if _has_gpu else np                   # array namespace
+    def _to_cpu(a): return cp.asnumpy(a) if _has_gpu else a
+    """);
+```
+
+### Matrix multiply on GPU
+
+```csharp
+interp.Execute("""
+    rng = np.random.default_rng(42)
+    A   = xp.asarray(rng.random((512, 512), dtype=np.float32))
+    B   = xp.asarray(rng.random((512, 512), dtype=np.float32))
+    """);
+
+interp.Execute("C = xp.matmul(A, B)");
+
+// Move result to CPU NumPy, then read zero-copy via Span<T>.
+using var result = interp.Evaluate("_to_cpu(C)");
+using var tensor = PyTensor.FromPyObject(result);
+using var buf    = tensor.AsTensorBuffer();       // only valid for CPU tensors
+Span<float> values = buf.AsSpan<float>();         // direct pointer into NumPy buffer
+```
+
+### FFT with nvmath-python
+
+```csharp
+interp.Execute("""
+    import nvmath.fft as nvfft
+    signal = cp.sin(cp.linspace(0, 2 * cp.pi, 8192)).astype(cp.float32)
+    output = nvfft.fft(signal)            # stays on GPU
+    mag    = _to_cpu(cp.abs(output).astype(cp.float32))
+    """);
+
+using var mag    = interp.Evaluate("mag");
+using var tensor = PyTensor.FromPyObject(mag);
+using var buf    = tensor.AsTensorBuffer();
+Span<float> magnitudes = buf.AsSpan<float>();
+```
+
+### Inspect GPU tensor metadata via DLPack (no device copy)
+
+`PyTensor.FromPyObject` reads device, dtype, and shape via `__dlpack_device__()` without
+touching device memory. Use `DLPackTensor.From()` to get the raw CUDA device pointer for
+.NET CUDA interop libraries such as [ILGPU](https://ilgpu.net/) or
+[ManagedCuda](https://github.com/kunzmi/managedCuda).
+
+```csharp
+interp.Execute("gpu_t = cp.zeros((4, 128, 128), dtype=cp.float16)");
+using var pyObj = interp.Evaluate("gpu_t");
+using var t     = PyTensor.FromPyObject(pyObj);
+
+Console.WriteLine(t.Device);        // TensorDevice.Cuda
+Console.WriteLine(t.DataType);      // TensorDataType.Float16
+Console.WriteLine(t.ElementCount);  // 65536
+
+// Raw CUDA device pointer (for ILGPU / ManagedCuda):
+// using var dlp = DLPackTensor.From(pyObj);
+// nuint cudaPtr = (nuint)dlp.DataPointer;
+```
+
+> **Note** `AsTensorBuffer()` throws `PyInteropException` for CUDA tensors because the
+> buffer protocol requires CPU-accessible memory. Call `cp.asnumpy()` first to get a CPU
+> NumPy array, or use `DLPackTensor` to work with the device pointer directly.
 
 ---
 
@@ -659,6 +763,10 @@ dotnet run --project samples/PyDotNet.Sample.ZeroCopy
 
 # Async: driving Python asyncio coroutines from .NET Tasks.
 dotnet run --project samples/PyDotNet.Sample.Async
+
+# GPU: CuPy matrix multiply, nvmath-python FFT, DLPack metadata, C#→GPU→C# zero-copy.
+# Falls back to NumPy automatically when no CUDA GPU is available.
+dotnet run --project samples/PyDotNet.Sample.Gpu
 ```
 
 ### Benchmarks
