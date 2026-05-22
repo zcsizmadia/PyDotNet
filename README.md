@@ -8,6 +8,7 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 [![NuGet](https://img.shields.io/nuget/v/Kestrel.PathTrace.svg)](https://www.nuget.org/packages/PyDotNet)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![.NET: 8 | 9 | 10](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010-purple)
+![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)
 
 ---
 
@@ -37,6 +38,8 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
   - [Coroutines](#coroutines)
   - [Keyword arguments in async calls](#keyword-arguments-in-async-calls)
   - [Async generators (IAsyncEnumerable)](#async-generators-iasyncenumerable)
+  - [PyModule async methods](#pymodule-async-methods)
+  - [EvaluateAsync](#evaluateasync)
 - [Configuration](#configuration)
 - [Exception handling](#exception-handling)
 - [Thread safety and the GIL](#thread-safety-and-the-gil)
@@ -58,8 +61,10 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 | **Array interface** | Reads `__array_interface__` and `__cuda_array_interface__` without importing NumPy |
 | **GPU compute libraries** | Call CuPy, nvmath-python, PyTorch, JAX, or any CUDA-accelerated library; inspect GPU tensor metadata via DLPack without a device copy |
 | **Async/await bridge** | `await fn.CallAsync<T>()` drives Python `asyncio` coroutines from .NET Tasks |
-| **Async generators** | `fn.CallAsyncEnumerable<T>()` streams Python async generators as `IAsyncEnumerable<T>` |
-| **Keyword arguments** | Pass `kwargs` to any Python callable via `Call(args, kwargs)` and `CallAsync(args, kwargs)` |
+| **Async generators** | `fn.CallAsyncEnumerable<T>()` and `module.CallAsyncEnumerable<T>()` stream Python async generators as `IAsyncEnumerable<T>`; supports kwargs; calls `aclose()` on early break |
+| **PyModule async** | `module.CallAsync<T>()`, `module.CallAsync()`, `module.CallAsyncEnumerable<T>()` — invoke coroutines and generators by name, without a `GetFunction` call |
+| **EvaluateAsync** | `interp.EvaluateAsync<T>(expr)` evaluates a Python expression and drives the resulting coroutine to completion |
+| **Keyword arguments** | Pass `kwargs` to any Python callable via `Call(args, kwargs)`, `CallAsync(args, kwargs)`, and `CallAsyncEnumerable(args, kwargs)` |
 | **Typed collections** | `PyList<T>` and `PyDict<TKey,TValue>` — strongly-typed wrappers with `IReadOnlyList<T>` / `IReadOnlyDictionary<TKey,TValue>` |
 | **Tuple marshaling** | `ValueTuple<T1…T7>` is automatically converted to/from Python tuples via `ToPython()`, `As<T>()`, and `Call<T>()` |
 | **Weak references** | `PyWeakRef<T>` / `PyWeakRef.Create<T>()` — track Python objects without preventing GC |
@@ -969,13 +974,82 @@ await foreach (var tick in tickerFn.CallAsyncEnumerable<object>("AAPL", 5))
 }
 ```
 
-Early break is safe — the generator is cleaned up on `DisposeAsync`:
+Keyword arguments are supported on `CallAsyncEnumerable<T>` too:
+
+```csharp
+await foreach (var item in tickerFn.CallAsyncEnumerable<object>(
+    args:   ["AAPL"],
+    kwargs: new Dictionary<string, object?> { ["count"] = 10 }))
+{
+    Console.WriteLine(item);
+}
+```
+
+Early break is safe — `aclose()` is automatically called on the async generator so Python
+`finally` blocks and async context managers run correctly:
 
 ```csharp
 await foreach (var item in fn.CallAsyncEnumerable<int>(1000))
 {
-    if (item > 9) break;   // disposes the iterator cleanly
+    if (item > 9) break;   // aclose() called: Python finally block runs
 }
+```
+
+### PyModule async methods
+
+Call coroutines and async generators **directly on a `PyModule`** without getting a `PyFunction` first:
+
+```csharp
+using var module = interp.ImportModule("__main__");
+
+// Coroutine → Task<T>
+int result = await module.CallAsync<int>("add_async", 10, 32);
+
+// Coroutine with kwargs → Task<T>
+string msg = await module.CallAsync<string>(
+    "greet",
+    args:   ["Alice"],
+    kwargs: new Dictionary<string, object?> { ["greeting"] = "Hi" });
+
+// Void coroutine → Task
+await module.CallAsync("fire_and_forget", "payload");
+
+// Async generator → IAsyncEnumerable<T>
+await foreach (var v in module.CallAsyncEnumerable<int>("count_up", 5))
+{
+    Console.WriteLine(v);
+}
+
+// Async generator with kwargs → IAsyncEnumerable<T>
+await foreach (var v in module.CallAsyncEnumerable<int>(
+    "count_range",
+    args:   [],
+    kwargs: new Dictionary<string, object?> { ["start"] = 2, ["stop"] = 10, ["step"] = 2 }))
+{
+    Console.WriteLine(v);
+}
+```
+
+### EvaluateAsync
+
+Drive a coroutine created via a Python expression string:
+
+```csharp
+interp.Execute("""
+    import asyncio
+
+    async def async_pow(base, exp):
+        await asyncio.sleep(0)
+        return base ** exp
+
+    _pending = async_pow(3, 10)
+    """);
+
+// Evaluate the expression and drive the resulting coroutine
+long result = await interp.EvaluateAsync<long>("_pending");    // 59049
+
+// Or inline:
+long inline = await interp.EvaluateAsync<long>("async_pow(2, 8)");  // 256
 ```
 
 ---

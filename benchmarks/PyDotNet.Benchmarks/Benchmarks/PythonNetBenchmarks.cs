@@ -170,7 +170,9 @@ public class PythonNetBenchmarks
             // Build a Python list from the .NET array.
             using var pyList = new PyList();
             foreach (var n in IntList100)
+            {
                 pyList.Append(new PyInt(n));
+            }
 
             using var r = _identityFn.Invoke(pyList);
 
@@ -222,7 +224,10 @@ public class PythonNetBenchmarks
         using (Py.GIL())
         {
             var data = new byte[65536];
-            for (var i = 0; i < data.Length; i++) data[i] = (byte)(i & 0xFF);
+            for (var i = 0; i < data.Length; i++)
+            {
+                data[i] = (byte)(i & 0xFF);
+            }
             using var buf = _byteArray64K.GetBuffer(PyBUF.CONTIG);   // CONTIG includes WRITABLE
             buf.Write(data, 0, data.Length, IntPtr.Zero);
         }
