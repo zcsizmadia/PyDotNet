@@ -1,0 +1,18 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PyDotNet/PyDotNet.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PyDotNet.Snippets.Tests/PyDotNet.Snippets.Tests.csproj" />
+    <Project Path="tests/PyDotNet.Tests/PyDotNet.Tests.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/PyDotNet.Sample.Basic/PyDotNet.Sample.Basic.csproj" />
+    <Project Path="samples/PyDotNet.Sample.Gpu/PyDotNet.Sample.Gpu.csproj" />
+    <Project Path="samples/PyDotNet.Sample.ZeroCopy/PyDotNet.Sample.ZeroCopy.csproj" />
+    <Project Path="samples/PyDotNet.Sample.Async/PyDotNet.Sample.Async.csproj" />
+  </Folder>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/PyDotNet.Benchmarks/PyDotNet.Benchmarks.csproj" />
+  </Folder>
+</Solution>

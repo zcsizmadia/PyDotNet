@@ -1,0 +1,77 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-latest, macos-26-intel]
+        python-version: ['3.11', '3.12', '3.13', '3.14']
+
+        include:
+          - os: ubuntu-latest
+            python-version: '3.14'
+            pack-nupkg: true
+
+    runs-on: ${{ matrix.os }}
+    name: Build - ${{ matrix.os }} - Python ${{ matrix.python-version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install .NET SDKs
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          update-environment: true
+
+      - name: Install packages
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          # polars-lts-cpu has x86_64 wheels only; fall back to polars on ARM64.
+          python -m pip install numpy pandas pyarrow
+          pip install polars-lts-cpu || pip install polars
+
+      - name: Build
+        shell: bash
+        run: |
+          dotnet restore
+          dotnet build -c Release --no-restore
+
+      - name: Test
+        shell: bash
+        run: |
+          dotnet test -c Release --no-build
+
+      - name: Pack 
+        if: matrix.pack-nupkg == true
+        shell: bash
+        run: |
+          dotnet pack -c Release --no-build -o nupkgs src/PyDotNet/
+
+      - name: Upload NuGet packages
+        if: matrix.pack-nupkg == true
+        uses: actions/upload-artifact@v7
+        with:
+          name: nuget-packages
+          path: |
+            nupkgs/*.nupkg
