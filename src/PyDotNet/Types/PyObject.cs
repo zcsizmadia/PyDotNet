@@ -581,10 +581,5 @@ public class PyObject : IDisposable
         }
     }
 
-    internal static IntPtr GetPyNone()
-    {
-        var main = NativeMethods.PyImport_AddModule("__main__");
-        var globals = NativeMethods.PyModule_GetDict(main);
-        return NativeMethods.PyRun_String("None", PyConstants.EvalInput, globals, globals);
-    }
+    internal static IntPtr GetPyNone() => TypeConverter.GetNone();
 }
