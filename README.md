@@ -4,13 +4,17 @@ A modern, high-performance, async-aware, zero-copy Python ↔ .NET interop runti
 
 PyDotNet embeds CPython directly inside your .NET process. No subprocess, no sockets, no serialisation — just raw function calls across the language boundary with full GIL awareness and optional zero-copy memory sharing.
 
-[![Build](https://github.com/your-org/PyDotNet/actions/workflows/build.yml/badge.svg)](https://github.com/your-org/PyDotNet/actions/workflows/build.yml)
+[![Build](https://github.com/zcsizmadia/PyDotNet/actions/workflows/build.yml/badge.svg)](https://github.com/zcsizmadia/PyDotNet/actions/workflows/build.yml)
+[![NuGet](https://img.shields.io/nuget/v/Kestrel.PathTrace.svg)](https://www.nuget.org/packages/PyDotNet)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![.NET: 8 | 9 | 10](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010-purple)
 
 ---
 
 ## Table of contents
 
 - [Features](#features)
+- [Why PyDotNet?](#why-pydotnet)
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Quick start](#quick-start)
@@ -48,15 +52,53 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 
 ---
 
+## Why PyDotNet?
+
+### Comparison with alternatives
+
+| Approach | Call latency | Zero-copy memory | Async coroutines | Notes |
+|---|---|---|---|---|
+| **PyDotNet** | ~1–3 µs | ✓ `Span<T>` / DLPack | ✓ native `Task` | In-process; no serialization |
+| `pythonnet` | ~5–20 µs | ✗ | ✗ | In-process but COM-style reflection overhead |
+| Subprocess + stdout | ~1–50 ms | ✗ | ✗ | Process start + pipe encoding |
+| REST / gRPC service | ~0.5–10 ms | ✗ | via HTTP/2 | Network stack; separate process/container |
+
+### Key advantages over `pythonnet`
+
+- **Explicit ownership** — every Python object is a `using` variable; `Py_DecRef` is called
+  deterministically, so there are no GC finalizer races or surprise collection pauses.
+- **Zero-copy buffers** — expose `bytearray`, NumPy arrays, and anything that implements the
+  buffer protocol directly as `Span<T>` or `Memory<T>` with no heap allocation.
+- **DLPack tensor exchange** — share tensors with NumPy ≥ 1.22, PyTorch, JAX, and TensorFlow
+  without copying — even on CUDA devices.
+- **Async-first** — `await fn.CallAsync<T>()` drives Python `asyncio` coroutines natively from
+  .NET `Task`s, including concurrent fan-out with `Task.WhenAll`.
+- **Modern .NET** — targets net8.0 / net9.0 / net10.0 from a single package; built with
+  `Nullable`, `TreatWarningsAsErrors`, and `AnalysisLevel=latest-recommended`.
+
+---
+
 ## Requirements
 
 | Component | Minimum version |
 |---|---|
 | .NET SDK | 8.0 |
 | Python | 3.11 — 3.14 (CPython, standard GIL or free-threaded builds) |
-| OS | Windows x64, Linux x64, macOS (x64 / Apple Silicon) |
+| OS | Windows x64/ARM64, Linux x64/ARM64, macOS (x64 / Apple Silicon) |
 
-Python must be installed and discoverable (see [Configuration](#configuration) for manual library path override).
+Python must be installed **with its shared library** and be discoverable. See [Configuration](#configuration) for the manual override.
+
+**Linux** — install the shared-library package (not just the interpreter):
+```bash
+# Debian / Ubuntu
+sudo apt install libpython3.12          # adjust version as needed
+# RHEL / Fedora
+sudo dnf install python3.12-libs
+```
+
+**macOS** — Homebrew (`brew install python@3.12`) or the official [python.org](https://www.python.org/downloads/) installer both work. The Xcode / system Python does **not** include a shared library and will not work.
+
+**Windows** — use the official [python.org](https://www.python.org/downloads/) installer. Conda and Windows Store Python are not supported.
 
 ---
 
@@ -175,8 +217,16 @@ using var obj = interp.Evaluate("[1, 2, 3]");
 // Convert to a .NET type.
 int[] arr = obj.As<int[]>();
 
-// Attribute access.
+// Read an attribute.
 using var upper = obj.GetAttr("__class__");
+
+// Write an attribute.
+// When called on a module object this sets a module-level global, making the
+// value addressable from subsequent Evaluate() / Execute() calls.
+using var main = interp.ImportModule("__main__");
+using var result = someFunc.Call(args);
+main.SetAttr("_result", result);           // now reachable as "_result" in Python
+using var extracted = interp.Evaluate("_result['key']");
 
 // Item access (indexer).
 using var first = obj[0L];      // obj[0]
@@ -232,6 +282,27 @@ double asyncResult = await log.CallAsync<double>(Math.E);
 // Get the qualified name.
 Console.WriteLine(log.GetQualifiedName()); // "log"
 ```
+
+### PyIterator
+
+`PyIterator` bridges any Python iterable to .NET's `IEnumerable<PyObject>` using the
+`__iter__` / `__next__` protocol. Each yielded item owns one reference and must be disposed.
+
+```csharp
+using PyDotNet.Iterators;
+
+interp.Execute("words = ['hello', 'world', 'from', 'python']");
+using var pyList = interp.Evaluate("words");
+
+foreach (var item in PyIterator.From(pyList))
+using (item)
+{
+    Console.WriteLine(item.As<string>());
+}
+```
+
+Works with any iterable: `list`, `tuple`, `set`, `generator`, `dict.keys()`,
+custom classes that implement `__iter__`, and so on.
 
 ---
 
@@ -527,28 +598,60 @@ int[] squares = await Task.WhenAll(tasks);
 
 ---
 
-## Building from source
+## Local development
+
+### Prerequisites
+
+| Tool | Minimum version | Notes |
+|---|---|---|
+| .NET SDK | 10.0 | Needed to build all three TFMs (net8.0, net9.0, net10.0) |
+| Python | 3.11+ | Must include the shared library (see [Requirements](#requirements)) |
+| `numpy` | any | Integration tests |
+| `pandas` | any | Integration tests |
+| `pyarrow` | any | Integration tests |
+| `polars` | any | Integration tests |
 
 ```bash
-git clone https://github.com/your-org/PyDotNet
+# Install Python test dependencies
+pip install numpy pandas pyarrow polars-lts-cpu   # Linux / macOS x64
+pip install numpy pandas pyarrow polars           # Windows or ARM64
+```
+
+### Clone and build
+
+```bash
+git clone https://github.com/zcsizmadia/PyDotNet
 cd PyDotNet
+dotnet restore
+dotnet build -c Release --no-restore
+```
 
-# Requires .NET 10 SDK and Python 3.11+ installed.
-dotnet build -c Release
+### Run tests
 
-# Run all tests (multi-targeted: net8.0 / net9.0 / net10.0).
-dotnet test -c Release
+```bash
+# All tests across all TFMs
+dotnet test -c Release --no-build
 
-# Pack the NuGet package.
-dotnet pack src/PyDotNet -c Release -o nupkgs
+# Single TFM only
+dotnet test -c Release --no-build -f net10.0
+
+# Single test project
+dotnet test -c Release --no-build tests/PyDotNet.Tests/
+
+# Snippet tests (numpy / pandas / polars integration)
+dotnet test -c Release --no-build tests/PyDotNet.Snippets.Tests/
+```
+
+### Pack the NuGet package
+
+```bash
+dotnet pack src/PyDotNet -c Release --no-build -o nupkgs
 ```
 
 ### Samples
 
-Three runnable samples are included:
-
 ```bash
-# Basic: arithmetic, strings, lists, function references.
+# Basic: arithmetic, strings, lists, class instances, order aggregation.
 dotnet run --project samples/PyDotNet.Sample.Basic
 
 # Zero-copy: read/write Python bytearrays without allocation.
@@ -561,7 +664,21 @@ dotnet run --project samples/PyDotNet.Sample.Async
 ### Benchmarks
 
 ```bash
-dotnet run --project benchmarks/PyDotNet.Benchmarks -c Release
+# Full run (BenchmarkDotNet)
+dotnet run -c Release --project benchmarks/PyDotNet.Benchmarks
+
+# Filter to a specific class
+dotnet run -c Release --project benchmarks/PyDotNet.Benchmarks -- --filter *PyDotNet*
+dotnet run -c Release --project benchmarks/PyDotNet.Benchmarks -- --filter *PythonNet*
+```
+
+### Code style
+
+The project enforces `TreatWarningsAsErrors` and `EnforceCodeStyleInBuild`; the build
+will fail on any style violation. Run `dotnet format` before committing:
+
+```bash
+dotnet format
 ```
 
 ---
@@ -572,6 +689,7 @@ dotnet run --project benchmarks/PyDotNet.Benchmarks -c Release
 |---|---|---|---|
 | Windows | x64 | 3.11, 3.12, 3.13, 3.14 | Tested in CI |
 | Linux (Ubuntu) | x64 | 3.11, 3.12, 3.13, 3.14 | Tested in CI |
+| Linux (Ubuntu) | arm64 | 3.11, 3.12, 3.13, 3.14 | Tested in CI |
 | macOS | x64, Apple Silicon | 3.11, 3.12, 3.13, 3.14 | Tested in CI |
 
 CI runs the full test suite across all three .NET TFMs (net8.0, net9.0, net10.0) and all four Python versions on every push.

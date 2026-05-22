@@ -1,20 +1,32 @@
 <Project>
   <PropertyGroup>
+    <Version>0.9.0</Version>
+
     <DefaultTargetFrameworks>net8.0;net9.0;net10.0</DefaultTargetFrameworks>
     <DefaultTargetFramework>net10.0</DefaultTargetFramework>
+
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>preview</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
+
     <Authors>Zoltan Csizmadia</Authors>
     <Company>Zoltan Csizmadia</Company>
     <Product>PyDotNet</Product>
     <Copyright>Copyright © Zoltan Csizmadia 2026</Copyright>
     <RepositoryUrl>https://github.com/zcsizmadia/PyDotNet</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <Version>0.9.0</Version>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Include the root README.md in every NuGet package built from this repo. -->
+    <!-- MSBuildThisFileDirectory is the repo root, so the path is always correct  -->
+    <!-- regardless of how deeply nested the project file is.                       -->
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
 </Project>

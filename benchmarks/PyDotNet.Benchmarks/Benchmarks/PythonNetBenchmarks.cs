@@ -69,17 +69,26 @@ public class PythonNetBenchmarks
     [GlobalCleanup]
     public void Cleanup()
     {
-        using (Py.GIL())
+        try
         {
-            _byteArray64K?.Dispose();
-            _sqrtFn?.Dispose();
-            _mathModule?.Dispose();
-            _fibFn?.Dispose();
-            _addFn?.Dispose();
-            _identityFn?.Dispose();
-            _scope?.Dispose();
+            using (Py.GIL())
+            {
+                _byteArray64K?.Dispose();
+                _sqrtFn?.Dispose();
+                _mathModule?.Dispose();
+                _fibFn?.Dispose();
+                _addFn?.Dispose();
+                _identityFn?.Dispose();
+                _scope?.Dispose();
+            }
+            PythonEngine.Shutdown();
         }
-        PythonEngine.Shutdown();
+        catch (NotSupportedException ex) when (ex.Message.Contains("BinaryFormatter"))
+        {
+            // PythonNet 3.x serializes exceptions via BinaryFormatter, which was
+            // removed in .NET 9+.  The benchmarks are complete at this point so
+            // swallowing the exception is safe and lets BenchmarkDotNet write results.
+        }
     }
 
     // ── Function call overhead ────────────────────────────────────────────────

@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Release
     # This ensures the job only runs if the tag was created from the main branch
-    if: github.event.release.target_commitish == 'main' || github.ref == 'refs/heads/main'
+    if: github.event.release.target_commitish == 'main'
     permissions:
       actions: read     # To download from build.yml
       contents: write   # To upload assets to the Release
@@ -34,10 +34,10 @@ jobs:
           workflow: build.yml
           workflow_conclusion: success
           branch: main             # Strictly target the main branch
+          commit: ${{ github.sha }} # Pin to the exact commit the release tag points to
           name: nuget-packages
           path: ./nupkgs
           check_artifacts: true    # Ensures the workflow actually has the named artifact
-          search_artifacts: true   # Finds the latest run that actually contains this artifact
 
       - name: Check nupkg version
         shell: bash
