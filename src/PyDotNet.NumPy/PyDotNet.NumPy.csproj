@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>$(DefaultTargetFrameworks)</TargetFrameworks>
+    <OutputType>Library</OutputType>
+    <RootNamespace>PyDotNet.NumPy</RootNamespace>
+    <AssemblyName>PyDotNet.NumPy</AssemblyName>
+    <Description>Typed NumPy NdArray bindings for PyDotNet — zero-copy via DLPack, async reducers.</Description>
+    <PackageTags>python;numpy;interop;dotnet;zero-copy;dlpack;ndarray</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IsPackable>true</IsPackable>
+    <PackageReadmeFile>numpy.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)../../docs/numpy.md"
+          Pack="true" PackagePath="/"
+          Condition="Exists('$(MSBuildThisFileDirectory)../../docs/numpy.md')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../PyDotNet/PyDotNet.csproj" />
+  </ItemGroup>
+
+</Project>
