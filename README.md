@@ -4,6 +4,9 @@ A modern, high-performance, async-aware, zero-copy Python ↔ .NET interop runti
 
 PyDotNet embeds CPython directly inside your .NET process. No subprocess, no sockets, no serialisation — just raw function calls across the language boundary with full GIL awareness and optional zero-copy memory sharing.
 
+> **Plugin packages** — typed, idiomatic C# wrappers for popular Python libraries ship as separate NuGet packages built on top of PyDotNet core:
+> [`PyDotNet.NumPy`](docs/numpy.md) · `PyDotNet.DataFrames` _(planned)_ · `PyDotNet.Torch` _(planned)_ · `PyDotNet.LangChain` _(planned)_ · `PyDotNet.Matplotlib` _(planned)_
+
 [![Build](https://github.com/zcsizmadia/PyDotNet/actions/workflows/build.yml/badge.svg)](https://github.com/zcsizmadia/PyDotNet/actions/workflows/build.yml)
 [![NuGet](https://img.shields.io/nuget/v/Kestrel.PathTrace.svg)](https://www.nuget.org/packages/PyDotNet)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
