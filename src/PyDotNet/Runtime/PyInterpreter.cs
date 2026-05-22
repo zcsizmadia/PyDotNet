@@ -121,6 +121,37 @@ public sealed class PyInterpreter : IDisposable
     }
 
     /// <summary>
+    /// Evaluates a Python coroutine expression and drives it to completion, returning the result.
+    /// When <paramref name="cancellationToken"/> fires the returned <see cref="Task{T}"/> transitions
+    /// to cancelled; the Python coroutine may still complete on a pool thread.
+    /// </summary>
+    /// <typeparam name="T">The expected return type of the coroutine.</typeparam>
+    /// <param name="expression">A valid Python expression that produces a coroutine.</param>
+    /// <param name="cancellationToken">Token to cancel the .NET wait.</param>
+    public Task<T> EvaluateAsync<T>(string expression, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(expression);
+        EnsureNotDisposed();
+        PyRuntime.EnsureInitialized();
+
+        IntPtr coroutine;
+        using (var gil = new GilScope())
+        {
+            var mainModule = NativeMethods.PyImport_AddModule("__main__"); // borrowed
+            var globals = NativeMethods.PyModule_GetDict(mainModule);      // borrowed
+
+            coroutine = NativeMethods.PyRun_String(expression, PyConstants.EvalInput, globals, globals);
+            if (coroutine == IntPtr.Zero)
+            {
+                PythonException.ThrowIfPythonErrorOccurred();
+                throw new PyRuntimeException($"Failed to evaluate expression: {expression}");
+            }
+        }
+
+        return AsyncBridge.RunCoroutineObjectAsync<T>(coroutine, cancellationToken);
+    }
+
+    /// <summary>
     /// Gets the current Python version string (e.g. <c>3.12.3</c>).
     /// </summary>
     public string GetPythonVersion()

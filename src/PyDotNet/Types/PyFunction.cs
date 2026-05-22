@@ -65,11 +65,29 @@ public sealed class PyFunction : PyObject
     }
 
     /// <summary>
+    /// Calls the Python function as a coroutine with a <see cref="CancellationToken"/>.
+    /// When the token fires the returned <see cref="Task{T}"/> transitions to cancelled;
+    /// the Python coroutine may still complete on a pool thread.
+    /// </summary>
+    public Task<T> CallAsync<T>(object?[] args, CancellationToken cancellationToken)
+    {
+        return AsyncBridge.RunCoroutineAsync<T>(Handle, args, cancellationToken);
+    }
+
+    /// <summary>
     /// Calls the Python function as a coroutine with keyword arguments.
     /// </summary>
     public Task<T> CallAsync<T>(object?[] args, IDictionary<string, object?> kwargs)
     {
         return AsyncBridge.RunCoroutineAsync<T>(Handle, args, kwargs);
+    }
+
+    /// <summary>
+    /// Calls the Python function as a coroutine with keyword arguments and a <see cref="CancellationToken"/>.
+    /// </summary>
+    public Task<T> CallAsync<T>(object?[] args, IDictionary<string, object?> kwargs, CancellationToken cancellationToken)
+    {
+        return AsyncBridge.RunCoroutineAsync<T>(Handle, args, kwargs, cancellationToken);
     }
 
     /// <summary>
@@ -81,11 +99,28 @@ public sealed class PyFunction : PyObject
     }
 
     /// <summary>
+    /// Calls the Python function as a coroutine without returning a value, with a <see cref="CancellationToken"/>.
+    /// </summary>
+    public Task CallAsync(object?[] args, CancellationToken cancellationToken)
+    {
+        return AsyncBridge.RunCoroutineAsync(Handle, args, cancellationToken);
+    }
+
+    /// <summary>
     /// Calls the Python function as a coroutine with keyword arguments without returning a value.
     /// </summary>
     public Task CallAsync(object?[] args, IDictionary<string, object?> kwargs)
     {
         return AsyncBridge.RunCoroutineAsync(Handle, args, kwargs);
+    }
+
+    /// <summary>
+    /// Calls the Python function as a coroutine with keyword arguments without returning a value,
+    /// with a <see cref="CancellationToken"/>.
+    /// </summary>
+    public Task CallAsync(object?[] args, IDictionary<string, object?> kwargs, CancellationToken cancellationToken)
+    {
+        return AsyncBridge.RunCoroutineAsync(Handle, args, kwargs, cancellationToken);
     }
 
     /// <summary>
