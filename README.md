@@ -45,6 +45,7 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 - [Thread safety and the GIL](#thread-safety-and-the-gil)
 - [Local development](#local-development)
 - [Platform support](#platform-support)
+- [Roadmap](#roadmap)
 
 ---
 
@@ -1256,3 +1257,70 @@ dotnet format
 | macOS | x64, Apple Silicon | 3.11, 3.12, 3.13, 3.14 | Tested in CI |
 
 CI runs the full test suite across all three .NET TFMs (net8.0, net9.0, net10.0) and all four Python versions on every push.
+
+---
+
+## Roadmap
+
+Items below are planned or under active investigation. Rough priority order — earlier items are closer to being started.
+
+### Zero-copy DataFrame interop
+
+A first-class bridge for columnar data between .NET and Python without any intermediate copies:
+
+- `PyArrowTable` wrapping `pyarrow.Table` with zero-copy column access via the C Data Interface
+- Bidirectional Pandas `DataFrame` ↔ `RecordBatch` exchange
+- Polars `LazyFrame` sink / source so .NET can push and pull data from a Polars pipeline
+- Apache Arrow Flight RPC support for large distributed transfers
+
+### Advanced async patterns
+
+The core async bridge is complete. Next steps:
+
+- **Cancellation propagation** — map `CancellationToken` cancellations to Python `asyncio` task cancellation
+- **`asyncio.Queue` bridge** — expose a Python `asyncio.Queue` as a .NET `Channel<T>` (backpressure-aware)
+- **Structured concurrency** — wrap Python `asyncio.TaskGroup` (3.11+) so .NET can await a group of Python sub-tasks
+- **`async for` with timeouts** — per-item timeout on `IAsyncEnumerable<T>`
+
+### NativeAOT embedding
+
+Make PyDotNet usable in NativeAOT-published apps:
+
+- Replace `System.Reflection` / `DynamicMethod` paths in the marshaling layer with source-generated equivalents
+- Trim analysis annotations so the linker can safely remove unused converter paths
+- Verified publish profiles for `win-x64`, `linux-x64`, `linux-arm64`
+
+> **Note:** CPython itself is not AOT-compatible; this item is about making the *host side* (PyDotNet) AOT-safe so it can load and call `libpython` from a trimmed binary.
+
+### Typed package plugins
+
+Strongly-typed, discoverable C# APIs for the most popular Python packages — generated from Python type stubs (`.pyi`) at design time:
+
+| Package | Goal |
+|---------|------|
+| **NumPy** | `PyArray<T>` with LINQ-style operators, `ndarray` shape/dtype awareness |
+| **Pandas** | `PyDataFrame`, `PySeries` with column indexer and iterator |
+| **Polars** | `PyLazyFrame`, push/pull from `LazyFrame` plans |
+| **scikit-learn** | `PyEstimator<TInput, TOutput>` fit/predict/transform wrapper |
+| **PyTorch** | `PyTensor<T>` with grad tracking, device movement, and DLPack export |
+
+Long-term, a **source generator** will generate these wrappers automatically from any `.pyi` stub file, so users can create typed wrappers for their own packages.
+
+### Visualization bridge
+
+Render Python visualization libraries inside .NET UI frameworks without a browser round-trip:
+
+- **Matplotlib** → render to `byte[]` (PNG/SVG) or `System.Drawing.Bitmap` from any thread
+- **Plotly** → capture the HTML/JSON output and display in a WebView2 / MAUI `WebView`
+- **Streamlit** / **Gradio** → launch in a side-process and embed via iframe in Blazor
+- An `IPlotRenderer` abstraction so WPF, WinForms, MAUI, and Avalonia apps share the same API
+
+### Deep GPU interop
+
+Building on the existing DLPack and `__cuda_array_interface__` support:
+
+- **CUDA stream synchronization** — associate .NET async operations with CUDA streams so compute and I/O can overlap
+- **Device memory access** — read/write `cuMemAlloc` buffers from .NET without a device→host copy
+- **Multi-GPU routing** — inspect device ordinals from DLPack metadata and fan work out across GPUs
+- **NVIDIA cuSPARSE / cuBLAS wrappers** — call into Python math libraries with pre-staged GPU tensors
+- **Unified memory (`cudaMallocManaged`)** — share a single allocation across .NET, Python, and CUDA kernels
