@@ -53,9 +53,17 @@ try
     string gpuName = interp.Evaluate("_gpu_name").As<string>() ?? "(none)";
 
     if (hasGpu)
+    {
         Console.WriteLine($"CUDA GPU detected : {gpuName}");
+    }
     else
+    {
         Console.WriteLine("No CUDA GPU — all examples fall back to NumPy on CPU.");
+        Console.WriteLine();
+        Console.WriteLine("To enable GPU acceleration install:");
+        Console.WriteLine("  pip install cupy-cuda13x                # or cupy-cuda12x for CUDA 12");
+        Console.WriteLine("  pip install \"nvmath-python[cu13]\"      # optional: GPU FFT (cu12 for CUDA 12)");
+    }
 
     Console.WriteLine();
 
@@ -92,10 +100,14 @@ try
     // ── Example 2: 1-D FFT — nvmath-python (GPU) or numpy.fft (CPU) ─────
     //
     // nvmath-python is NVIDIA's CUDA-accelerated math library for Python.
-    // Install: pip install nvmath-python[cu12]
+    // Install: pip install cupy-cuda13x "nvmath-python[cu13]"
     // When absent, the sample falls back to numpy.fft transparently.
     //
-    Console.WriteLine("--- Example 2: 1-D FFT (N=8 192, float32) ---");
+    // NOTE: nvmath.fft.fft() is a complex-to-complex transform and requires
+    // complex input.  For real signals use rfft(), which is both correct and
+    // ~2× faster because it exploits Hermitian symmetry.
+    //
+    Console.WriteLine("--- Example 2: 1-D real FFT (N=8 192, float32) ---");
 
     interp.Execute("""
         _has_nvmath = False
@@ -106,13 +118,14 @@ try
             pass
 
         def run_fft(n):
-            '''Run 1-D FFT on a pure sine wave; return magnitude as CPU float32 array.'''
+            '''Run 1-D real FFT on a sine wave; return magnitude spectrum as CPU float32.'''
             signal = xp.sin(xp.linspace(0, 2 * xp.pi, n)).astype(xp.float32)
             if _has_nvmath and _has_gpu:
-                out = _nvfft.fft(signal)
+                # rfft: real float32 → complex64, shape (n//2+1,)
+                out = _nvfft.rfft(signal)
                 return _to_cpu(xp.abs(out).astype(xp.float32))
             else:
-                out = np.fft.fft(_to_cpu(signal))
+                out = np.fft.rfft(_to_cpu(signal))
                 return np.abs(out).astype(np.float32)
         """);
 
