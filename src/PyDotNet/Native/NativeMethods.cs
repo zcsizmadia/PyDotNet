@@ -339,6 +339,26 @@ internal static partial class NativeMethods
         IntPtr globals,
         IntPtr locals);
 
+    /// <summary>
+    /// Compiles a Python source string into a code object.
+    /// <paramref name="start"/> must be one of <see cref="PyConstants.FileInput"/>,
+    /// <see cref="PyConstants.EvalInput"/>, or <see cref="PyConstants.SingleInput"/>.
+    /// Returns a new reference to the code object, or <see cref="IntPtr.Zero"/> on error.
+    /// </summary>
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr Py_CompileString(
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string str,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string filename,
+        int start);
+
+    /// <summary>
+    /// Evaluates a pre-compiled code object in the given <paramref name="globals"/> and
+    /// <paramref name="locals"/> dictionaries. Returns a new reference, or
+    /// <see cref="IntPtr.Zero"/> on error.
+    /// </summary>
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr PyEval_EvalCode(IntPtr co, IntPtr globals, IntPtr locals);
+
     // ── Mapping protocol – string key helpers ─────────────────────────────
 
     /// <remarks>Returns a new reference, or null on error.</remarks>

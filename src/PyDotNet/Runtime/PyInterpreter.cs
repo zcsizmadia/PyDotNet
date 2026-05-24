@@ -151,6 +151,142 @@ public sealed class PyInterpreter : IDisposable
         return AsyncBridge.RunCoroutineObjectAsync<T>(coroutine, cancellationToken);
     }
 
+    // ── Pre-compiled code ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Compiles a block of Python statements into a reusable <see cref="PyCompiledCode"/>
+    /// object. The code object can be executed many times without re-parsing or
+    /// re-compiling the source text.
+    /// </summary>
+    /// <param name="source">Python source code containing one or more statements.</param>
+    /// <param name="fileName">
+    /// File name embedded in the code object and shown in Python tracebacks.
+    /// Defaults to <c>"&lt;string&gt;"</c>.
+    /// </param>
+    /// <returns>
+    /// A <see cref="PyCompiledCode"/> with <see cref="PyCompileMode.Exec"/> mode.
+    /// Dispose when no longer needed.
+    /// </returns>
+    /// <exception cref="PythonException">Thrown when the source contains a syntax error.</exception>
+    public PyCompiledCode Compile(string source, string fileName = "<string>")
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        EnsureNotDisposed();
+        PyRuntime.EnsureInitialized();
+
+        using var gil = new GilScope();
+
+        var codeObj = NativeMethods.Py_CompileString(source, fileName, PyConstants.FileInput);
+        if (codeObj == IntPtr.Zero)
+        {
+            PythonException.ThrowIfPythonErrorOccurred();
+            throw new PyRuntimeException("Py_CompileString returned null for unknown reasons.");
+        }
+
+        return new PyCompiledCode(codeObj, source, fileName, PyCompileMode.Exec);
+    }
+
+    /// <summary>
+    /// Compiles a single Python expression into a reusable <see cref="PyCompiledCode"/>
+    /// object.
+    /// </summary>
+    /// <param name="expression">A valid Python expression (no statements).</param>
+    /// <param name="fileName">
+    /// File name embedded in the code object and shown in Python tracebacks.
+    /// Defaults to <c>"&lt;string&gt;"</c>.
+    /// </param>
+    /// <returns>
+    /// A <see cref="PyCompiledCode"/> with <see cref="PyCompileMode.Eval"/> mode.
+    /// Dispose when no longer needed.
+    /// </returns>
+    /// <exception cref="PythonException">Thrown when the expression contains a syntax error.</exception>
+    public PyCompiledCode CompileExpression(string expression, string fileName = "<string>")
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(expression);
+        EnsureNotDisposed();
+        PyRuntime.EnsureInitialized();
+
+        using var gil = new GilScope();
+
+        var codeObj = NativeMethods.Py_CompileString(expression, fileName, PyConstants.EvalInput);
+        if (codeObj == IntPtr.Zero)
+        {
+            PythonException.ThrowIfPythonErrorOccurred();
+            throw new PyRuntimeException("Py_CompileString returned null for unknown reasons.");
+        }
+
+        return new PyCompiledCode(codeObj, expression, fileName, PyCompileMode.Eval);
+    }
+
+    /// <summary>
+    /// Executes a pre-compiled code object in the <c>__main__</c> global scope.
+    /// Symmetric overload of <see cref="Execute(string)"/> for use with
+    /// <see cref="PyCompiledCode"/> instances.
+    /// </summary>
+    /// <param name="compiled">The pre-compiled code object to execute.</param>
+    /// <exception cref="PythonException">Thrown when the Python code raises an exception.</exception>
+    public void Execute(PyCompiledCode compiled)
+    {
+        ArgumentNullException.ThrowIfNull(compiled);
+        EnsureNotDisposed();
+        compiled.Execute();
+    }
+
+    /// <summary>
+    /// Executes a pre-compiled code object with the supplied local variables in the
+    /// <c>__main__</c> global scope.
+    /// </summary>
+    /// <param name="compiled">The pre-compiled code object to execute.</param>
+    /// <param name="locals">Variables to inject before execution.</param>
+    /// <exception cref="PythonException">Thrown when the Python code raises an exception.</exception>
+    public void Execute(PyCompiledCode compiled, IDictionary<string, object?> locals)
+    {
+        ArgumentNullException.ThrowIfNull(compiled);
+        ArgumentNullException.ThrowIfNull(locals);
+        EnsureNotDisposed();
+        compiled.Execute(locals);
+    }
+
+    /// <summary>
+    /// Evaluates a pre-compiled expression in the <c>__main__</c> global scope and
+    /// returns the result. Symmetric overload of <see cref="Evaluate(string)"/> for
+    /// use with <see cref="PyCompiledCode"/> instances.
+    /// </summary>
+    /// <param name="compiled">
+    /// A code object produced by <see cref="CompileExpression"/>
+    /// (<see cref="PyCompileMode.Eval"/> mode).
+    /// </param>
+    /// <returns>A new <see cref="PyObject"/> owning the expression result. Dispose when done.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="compiled"/> is an exec-mode code object.
+    /// </exception>
+    /// <exception cref="PythonException">Thrown when the Python expression raises an exception.</exception>
+    public PyObject Evaluate(PyCompiledCode compiled)
+    {
+        ArgumentNullException.ThrowIfNull(compiled);
+        EnsureNotDisposed();
+        return compiled.Evaluate();
+    }
+
+    /// <summary>
+    /// Evaluates a pre-compiled expression with the supplied local variables and returns
+    /// the result.
+    /// </summary>
+    /// <param name="compiled">A code object produced by <see cref="CompileExpression"/>.</param>
+    /// <param name="locals">Variables to make available during evaluation.</param>
+    /// <returns>A new <see cref="PyObject"/> owning the expression result. Dispose when done.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="compiled"/> is an exec-mode code object.
+    /// </exception>
+    /// <exception cref="PythonException">Thrown when the Python expression raises an exception.</exception>
+    public PyObject Evaluate(PyCompiledCode compiled, IDictionary<string, object?> locals)
+    {
+        ArgumentNullException.ThrowIfNull(compiled);
+        ArgumentNullException.ThrowIfNull(locals);
+        EnsureNotDisposed();
+        return compiled.Evaluate(locals);
+    }
+
     /// <summary>
     /// Gets the current Python version string (e.g. <c>3.12.3</c>).
     /// </summary>

@@ -53,7 +53,7 @@ public sealed class PyInterpreterTests
 
         using var interp = PyRuntime.CreateInterpreter();
 
-        await Assert.That(() => interp.Execute(null!))
+        await Assert.That(() => interp.Execute((string)null!))
             .Throws<ArgumentNullException>();
     }
 
