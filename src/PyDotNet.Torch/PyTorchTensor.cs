@@ -13,6 +13,22 @@ namespace PyDotNet.Torch;
 /// Wraps a PyTorch <c>torch.Tensor</c> and exposes gradient tracking, device
 /// movement, element-wise math operations, and zero-copy DLPack interop.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>Python API coverage:</b> ~35 of the ~700 methods on <c>torch.Tensor</c> are wrapped.
+/// The wrapped surface covers autograd (<c>requires_grad</c>, <c>grad</c>, <c>backward</c>, <c>detach</c>),
+/// device movement (<c>to</c>, <c>cpu</c>, <c>cuda</c>),
+/// arithmetic (<c>+</c>, <c>-</c>, <c>*</c>, <c>/</c>, <c>@</c>, unary <c>-</c>),
+/// shape manipulation (<c>reshape</c>, <c>view</c>, <c>transpose</c>, <c>.T</c>, <c>squeeze</c>, <c>unsqueeze</c>),
+/// reductions (<c>mean</c>, <c>sum</c>),
+/// element-wise math (<c>abs</c>, <c>exp</c>, <c>log</c>, <c>sqrt</c>),
+/// activations (<c>relu</c>, <c>sigmoid</c>, <c>tanh</c>, <c>softmax</c>),
+/// data access (<c>item</c>, DLPack, buffer protocol),
+/// and factory functions (<c>torch.zeros</c>, <c>torch.ones</c>, <c>torch.empty</c>, <c>torch.from_dlpack</c>).
+/// Notable gaps include: <c>clone</c>, <c>contiguous</c>, <c>permute</c>, <c>cat</c>/<c>stack</c>,
+/// <c>max</c>/<c>min</c>, <c>norm</c>, <c>clamp</c>, index/slice access, and all in-place (<c>_</c>-suffixed) variants.
+/// </para>
+/// </remarks>
 public sealed class PyTorchTensor : PyTensor
 {
     private PyTorchTensor(IntPtr handle, TensorDevice device, TensorDataType dataType, long[] shape)
