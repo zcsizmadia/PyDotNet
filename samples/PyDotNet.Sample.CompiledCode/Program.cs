@@ -116,7 +116,7 @@ try
 }
 catch (InvalidOperationException ex)
 {
-    Console.WriteLine($"  Caught: {ex.Message.Split('.')[0]}.");
+    Console.WriteLine($"  Caught: {ex.Message}");
 }
 Console.WriteLine();
 
