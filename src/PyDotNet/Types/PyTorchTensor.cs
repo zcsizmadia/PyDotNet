@@ -361,6 +361,81 @@ public sealed class PyTorchTensor : PyTensor
         return DLPackTensor.From(this);
     }
 
+    // ── Buffer access ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Acquires a zero-copy buffer view of the tensor data (CPU tensors only).
+    /// </summary>
+    /// <remarks>
+    /// <c>torch.Tensor</c> does not implement the Python buffer protocol directly.
+    /// This override converts to a NumPy array via <c>.detach().numpy()</c>
+    /// (zero-copy for contiguous CPU tensors) and acquires the buffer from that.
+    /// </remarks>
+    public override PyBuffer AsTensorBuffer(bool writable = false)
+    {
+        if (Device != TensorDevice.Cpu)
+        {
+            throw new PyInteropException(
+                $"Zero-copy buffer views are only supported for CPU tensors. "
+                + $"This tensor is on device: {Device}.");
+        }
+
+        using var gil = new GilScope();
+
+        // detach() is a no-op for tensors without a gradient but required when
+        // requires_grad=true; calling it unconditionally keeps this branch simple.
+        var detachAttr = NativeMethods.PyObject_GetAttrString(Handle, "detach");
+        if (detachAttr == IntPtr.Zero)
+        {
+            PythonException.ThrowIfPythonErrorOccurred();
+        }
+
+        IntPtr detachedHandle;
+        try
+        {
+            detachedHandle = NativeMethods.PyObject_CallObject(detachAttr, IntPtr.Zero);
+        }
+        finally
+        {
+            NativeMethods.Py_DecRef(detachAttr);
+        }
+
+        if (detachedHandle == IntPtr.Zero)
+        {
+            PythonException.ThrowIfPythonErrorOccurred();
+        }
+
+        // .numpy() returns an ndarray that shares storage with the tensor.
+        var numpyAttr = NativeMethods.PyObject_GetAttrString(detachedHandle, "numpy");
+        NativeMethods.Py_DecRef(detachedHandle);
+
+        if (numpyAttr == IntPtr.Zero)
+        {
+            PythonException.ThrowIfPythonErrorOccurred();
+        }
+
+        IntPtr numpyHandle;
+        try
+        {
+            numpyHandle = NativeMethods.PyObject_CallObject(numpyAttr, IntPtr.Zero);
+        }
+        finally
+        {
+            NativeMethods.Py_DecRef(numpyAttr);
+        }
+
+        if (numpyHandle == IntPtr.Zero)
+        {
+            PythonException.ThrowIfPythonErrorOccurred();
+        }
+
+        // PyObject_GetBuffer (inside Acquire) adds its own reference to the ndarray;
+        // disposing the wrapper after acquisition is therefore safe — the buffer
+        // holds the only remaining Python reference to the numpy view.
+        using var npObj = PyObject.FromNewReference(numpyHandle);
+        return PyBuffer.Acquire(npObj, writable);
+    }
+
     // ── Factory methods ───────────────────────────────────────────────────
 
     /// <summary>

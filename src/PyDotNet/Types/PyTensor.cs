@@ -61,7 +61,7 @@ public class PyTensor : PyObject
     /// <summary>
     /// Acquires a zero-copy buffer view of the tensor data (CPU tensors only).
     /// </summary>
-    public PyBuffer AsTensorBuffer(bool writable = false)
+    public virtual PyBuffer AsTensorBuffer(bool writable = false)
     {
         if (Device != TensorDevice.Cpu)
         {

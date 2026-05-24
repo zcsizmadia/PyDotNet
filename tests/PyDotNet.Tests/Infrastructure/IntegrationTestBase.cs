@@ -46,6 +46,25 @@ internal static class PythonRuntimeHooks
             catch (PyRuntimeException)
             {
                 // Python found but init failed — tests will skip via SkipIfUnavailableAsync.
+                return;
+            }
+
+            // Pre-import torch (if available) before any test starts.
+            //
+            // torch's C extension releases the GIL internally during its first-ever
+            // import (MKL / OpenBLAS thread-pool initialisation). If a concurrent test
+            // is using asyncio (e.g. CallAsyncEnumerable_LargeSequence) during that
+            // GIL-release window, Python crashes with a SIGSEGV. Importing torch once
+            // here — on the session setup thread, before any test body begins — ensures
+            // the hazardous init phase is already complete by the time tests run.
+            using var probe = PyRuntime.CreateInterpreter();
+            try
+            {
+                probe.ImportModule("torch").Dispose();
+            }
+            catch
+            {
+                // torch is not installed — PyTorchTensorTests will skip automatically.
             }
         });
     }
