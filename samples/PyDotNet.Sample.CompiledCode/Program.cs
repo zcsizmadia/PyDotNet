@@ -43,10 +43,9 @@ Console.WriteLine("--- Example 2: timing comparison ---");
 const int Iterations = 10_000;
 const string ExprSource = "a * b + c";
 
-// Warm up
-interp.Evaluate(ExprSource);
+// Baseline: set variables in __main__ scope, then parse+compile+eval every iteration
+interp.Execute("a = 3\nb = 4\nc = 5");
 
-// Baseline: PyRun_String (parse + compile + eval) every iteration
 var sw = Stopwatch.StartNew();
 for (int i = 0; i < Iterations; i++)
 {
@@ -83,6 +82,7 @@ using var pipeline = interp.Compile("""
     import math
     hypotenuse = math.sqrt(a * a + b * b)
     area       = 0.5 * a * b
+    print(f"  a={a}, b={b}  \u2192  hypotenuse={hypotenuse:.4f}, area={area:.4f}")
     """);
 
 var triangles = new[] { (3.0, 4.0), (5.0, 12.0), (8.0, 15.0) };
@@ -90,10 +90,6 @@ var triangles = new[] { (3.0, 4.0), (5.0, 12.0), (8.0, 15.0) };
 foreach (var (a, b) in triangles)
 {
     pipeline.Execute(new Dictionary<string, object?> { ["a"] = a, ["b"] = b });
-
-    using var hyp  = interp.Evaluate("hypotenuse");
-    using var area = interp.Evaluate("area");
-    Console.WriteLine($"  a={a}, b={b}  →  hypotenuse={hyp.As<double>():F4}, area={area.As<double>():F4}");
 }
 Console.WriteLine();
 

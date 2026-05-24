@@ -112,9 +112,11 @@ public sealed class PyCompiledCode : IDisposable
     /// <param name="locals">
     /// Variables to inject before execution. Keys become Python names; values are
     /// converted with the standard <see cref="TypeConverter"/> rules. Any results
-    /// written to these names during execution can be read back from the returned
-    /// locals dictionary via a subsequent <see cref="PyInterpreter.Evaluate(string)"/> call,
-    /// or by reading the name from <c>__main__</c> if the code assigns to globals.
+    /// written to these names during execution remain in the locals scope of this
+    /// call; they are not visible to a subsequent <see cref="PyInterpreter.Evaluate(string)"/>
+    /// call on <c>__main__</c>. For result readback, have the Python code assign
+    /// to a global (e.g. <c>globals()['out'] = value</c>) or return a value via
+    /// a compiled eval-mode expression.
     /// </param>
     /// <remarks>
     /// This overload is the primary benefit of pre-compilation for hot loops: the source
