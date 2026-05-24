@@ -82,7 +82,8 @@ public sealed class NumpyRandom
             ["size"] = shape,
         };
         using var fn = _random.GetAttr("randint");
-        return new NdArray(fn.Call(Array.Empty<object?>(), kwargs));
+        using var result = new NdArray(fn.Call(Array.Empty<object?>(), kwargs));
+        return result.AsType(NumpyDType.Int64);
     }
 
     /// <summary>
@@ -131,7 +132,8 @@ public sealed class NumpyRandom
             ["size"] = shape,
         };
         using var fn = _random.GetAttr("poisson");
-        return new NdArray(fn.Call(Array.Empty<object?>(), kwargs));
+        using var result = new NdArray(fn.Call(Array.Empty<object?>(), kwargs));
+        return result.AsType(NumpyDType.Int64);
     }
 
     /// <summary>
@@ -150,7 +152,8 @@ public sealed class NumpyRandom
             ["replace"] = replace,
         };
         using var fn = _random.GetAttr("choice");
-        return new NdArray(fn.Call(new object?[] { n }, kwargs));
+        using var result = new NdArray(fn.Call(new object?[] { n }, kwargs));
+        return result.AsType(NumpyDType.Int64);
     }
 
     /// <summary>
@@ -160,6 +163,7 @@ public sealed class NumpyRandom
     public NdArray Permutation(long n)
     {
         using var fn = _random.GetAttr("permutation");
-        return new NdArray(fn.Call(n));
+        using var result = new NdArray(fn.Call(n));
+        return result.AsType(NumpyDType.Int64);
     }
 }

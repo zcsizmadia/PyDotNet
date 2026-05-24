@@ -74,11 +74,10 @@ jobs:
         if: matrix.pack-nupkg == true
         shell: bash
         run: |
-          dotnet pack -c Release --no-build -o nupkgs src/PyDotNet/
-          dotnet pack -c Release --no-build -o nupkgs src/PyDotNet.NumPy/
-          dotnet pack -c Release --no-build -o nupkgs src/PyDotNet.DataFrames/
-          dotnet pack -c Release --no-build -o nupkgs src/PyDotNet.Torch/
-          dotnet pack -c Release --no-build -o nupkgs src/PyDotNet.Matplotlib/
+          for proj in src/*/; do
+            echo "--- Packing $(basename "$proj") ---"
+            dotnet pack -c Release --no-build -o nupkgs "$proj"
+          done
 
       - name: Upload NuGet packages
         if: matrix.pack-nupkg == true
