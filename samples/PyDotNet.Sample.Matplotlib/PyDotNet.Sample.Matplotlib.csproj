@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>$(DefaultTargetFramework)</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>PyDotNet.Sample.Matplotlib</RootNamespace>
+    <AssemblyName>PyDotNet.Sample.Matplotlib</AssemblyName>
+    <Description>PyDotNet Matplotlib sample — render line, scatter, bar, and histogram charts to PNG/SVG byte arrays.</Description>
+    <NoWarn>$(NoWarn);CS1591;CA1861;CA1305</NoWarn>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/PyDotNet.Matplotlib/PyDotNet.Matplotlib.csproj" />
+  </ItemGroup>
+
+</Project>

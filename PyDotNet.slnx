@@ -1,12 +1,14 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/PyDotNet.DataFrames/PyDotNet.DataFrames.csproj" />
+    <Project Path="src/PyDotNet.Matplotlib/PyDotNet.Matplotlib.csproj" />
     <Project Path="src/PyDotNet.NumPy/PyDotNet.NumPy.csproj" />
     <Project Path="src/PyDotNet.Torch/PyDotNet.Torch.csproj" />
     <Project Path="src/PyDotNet/PyDotNet.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/PyDotNet.DataFrames.Tests/PyDotNet.DataFrames.Tests.csproj" />
+    <Project Path="tests/PyDotNet.Matplotlib.Tests/PyDotNet.Matplotlib.Tests.csproj" />
     <Project Path="tests/PyDotNet.NumPy.Tests/PyDotNet.NumPy.Tests.csproj" />
     <Project Path="tests/PyDotNet.Snippets.Tests/PyDotNet.Snippets.Tests.csproj" />
     <Project Path="tests/PyDotNet.Tests/PyDotNet.Tests.csproj" />
@@ -23,6 +25,7 @@
     <Project Path="samples/PyDotNet.Sample.Tuples/PyDotNet.Sample.Tuples.csproj" />
     <Project Path="samples/PyDotNet.Sample.TypedCollections/PyDotNet.Sample.TypedCollections.csproj" />
     <Project Path="samples/PyDotNet.Sample.AsyncGenerators/PyDotNet.Sample.AsyncGenerators.csproj" />
+    <Project Path="samples/PyDotNet.Sample.Matplotlib/PyDotNet.Sample.Matplotlib.csproj" />
     <Project Path="samples/PyDotNet.Sample.MemoryInterop/PyDotNet.Sample.MemoryInterop.csproj" />
     <Project Path="samples/PyDotNet.Sample.MemoryView/PyDotNet.Sample.MemoryView.csproj" />
     <Project Path="samples/PyDotNet.Sample.Utf8Span/PyDotNet.Sample.Utf8Span.csproj" />
