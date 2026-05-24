@@ -82,7 +82,7 @@ using var pipeline = interp.Compile("""
     import math
     hypotenuse = math.sqrt(a * a + b * b)
     area       = 0.5 * a * b
-    print(f"  a={a}, b={b}  \u2192  hypotenuse={hypotenuse:.4f}, area={area:.4f}")
+    print(f"  a={a}, b={b}  ->  hypotenuse={hypotenuse:.4f}, area={area:.4f}")
     """);
 
 var triangles = new[] { (3.0, 4.0), (5.0, 12.0), (8.0, 15.0) };

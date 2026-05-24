@@ -64,6 +64,8 @@ jobs:
 
       - name: Run samples
         shell: bash
+        env:
+          PYTHONUTF8: "1"
         run: |
           for proj in samples/*/; do
             echo "--- Running $(basename "$proj") ---"
