@@ -76,6 +76,7 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 | **Weak references** | `PyWeakRef<T>` / `PyWeakRef.Create<T>()` — track Python objects without preventing GC |
 | **Finalizer-safe GC** | `PyDecRefQueue` background thread drains abandoned object handles from .NET finalizers without holding the GIL inline |
 | **Full type marshaling** | Bidirectional conversion: primitives, strings, dates, collections, complex numbers |
+| **Pre-compiled code** | `interp.Compile()` / `interp.CompileExpression()` produce a `PyCompiledCode` object — parse and compile once, execute thousands of times; supports per-call variable injection via `Execute(locals)` / `Evaluate(locals)` |
 | **GIL-safe threading** | Automatic GIL acquire/release via `GilScope`; free-threaded Python 3.13+ detected |
 | **Auto-discovery** | Finds the Python shared library from PATH, registry (Windows), or environment variable |
 | **Structured logging** | Plugs into `Microsoft.Extensions.Logging` |
@@ -236,6 +237,47 @@ using var os = interp.ImportModule("os");
 
 // Get the Python version string.
 string version = interp.GetPythonVersion();
+```
+
+### Pre-compiled snippets
+
+Every call to `Execute(string)` or `Evaluate(string)` parses and compiles the source text from scratch. For hot loops — signal processing, dashboard rendering, batch inference — compile once and run many times with `PyCompiledCode`:
+
+```csharp
+// Compile the source exactly once → bytecode is ready
+using var formula = interp.CompileExpression("a * b + c");
+
+// Execute thousands of times — only bytecode evaluation, no re-parsing
+for (int i = 0; i < 100_000; i++)
+{
+    using var result = formula.Evaluate(new Dictionary<string, object?> {
+        ["a"] = data[i].A, ["b"] = data[i].B, ["c"] = bias
+    });
+    output[i] = result.As<double>();
+}
+```
+
+For statement blocks use `Compile()` (returns `PyCompileMode.Exec`); for single expressions use `CompileExpression()` (returns `PyCompileMode.Eval`). Calling `Evaluate()` on an exec-mode code object throws `InvalidOperationException` — the mode mismatch is caught early rather than silently returning `None`.
+
+```csharp
+// Statement block — compiled once, run per batch
+using var pipeline = interp.Compile("""
+    import math
+    hypotenuse = math.sqrt(a * a + b * b)
+    area       = 0.5 * a * b
+    """);
+
+foreach (var (a, b) in triangles)
+{
+    pipeline.Execute(new Dictionary<string, object?> { ["a"] = a, ["b"] = b });
+    using var hyp = interp.Evaluate("hypotenuse");
+}
+
+// Symmetric interpreter overloads are also available
+interp.Execute(pipeline);                         // plain Execute
+interp.Execute(pipeline, locals);                 // Execute with injection
+using var r = interp.Evaluate(formula);           // plain Evaluate
+using var r2 = interp.Evaluate(formula, locals);  // Evaluate with injection
 ```
 
 ### PyObject
