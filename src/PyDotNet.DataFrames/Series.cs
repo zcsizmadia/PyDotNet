@@ -73,6 +73,70 @@ public sealed class Series : IDisposable
         return result;
     }
 
+    // ── Statistical aggregations ──────────────────────────────────────────
+
+    /// <summary>Returns the mean value of all elements.</summary>
+    public double Mean()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var fn = _obj.GetAttr("mean");
+        using var result = fn.Call();
+        return result.As<double>();
+    }
+
+    /// <summary>Returns the sum of all elements.</summary>
+    public double Sum()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var fn = _obj.GetAttr("sum");
+        using var result = fn.Call();
+        return result.As<double>();
+    }
+
+    /// <summary>Returns the minimum value.</summary>
+    public double Min()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var fn = _obj.GetAttr("min");
+        using var result = fn.Call();
+        return result.As<double>();
+    }
+
+    /// <summary>Returns the maximum value.</summary>
+    public double Max()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var fn = _obj.GetAttr("max");
+        using var result = fn.Call();
+        return result.As<double>();
+    }
+
+    /// <summary>Returns the sample standard deviation (ddof=1).</summary>
+    public double Std()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var fn = _obj.GetAttr("std");
+        using var result = fn.Call();
+        return result.As<double>();
+    }
+
+    /// <summary>
+    /// Returns a new <see cref="Series"/> containing only unique values.
+    /// The caller must dispose the returned series.
+    /// </summary>
+    public Series Unique()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var fn = _obj.GetAttr("unique");
+        var result = fn.Call(); // don't dispose — owned by returned Series
+        return new Series(result);
+    }
+
+    // ── Internal access ───────────────────────────────────────────────────
+
+    // Exposed for DataFrame.Filter to build equality mask via series.eq(value).
+    internal PyObject PyObj => _obj;
+
     // ── Disposal ──────────────────────────────────────────────────────────
 
     /// <summary>Releases the Python object reference.</summary>

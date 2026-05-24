@@ -336,6 +336,132 @@ public sealed class NumpyModule : IDisposable
         return new NdArray(_np.Call("ascontiguousarray", a.PyObject));
     }
 
+    // ── Conditional / selection ───────────────────────────────────────────
+
+    /// <summary>
+    /// Returns elements chosen from <paramref name="x"/> or <paramref name="y"/> depending on
+    /// <paramref name="condition"/> (<c>numpy.where</c>).
+    /// </summary>
+    public NdArray Where(NdArray condition, NdArray x, NdArray y)
+    {
+        ArgumentNullException.ThrowIfNull(condition);
+        ArgumentNullException.ThrowIfNull(x);
+        ArgumentNullException.ThrowIfNull(y);
+        return new NdArray(_np.Call("where", condition.PyObject, x.PyObject, y.PyObject));
+    }
+
+    // ── Ufuncs (Tier 1) ───────────────────────────────────────────────────
+
+    /// <summary>Element-wise base-2 logarithm (<c>numpy.log2</c>).</summary>
+    public NdArray Log2(NdArray a)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        return new NdArray(_np.Call("log2", a.PyObject));
+    }
+
+    /// <summary>Element-wise base-10 logarithm (<c>numpy.log10</c>).</summary>
+    public NdArray Log10(NdArray a)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        return new NdArray(_np.Call("log10", a.PyObject));
+    }
+
+    /// <summary>
+    /// Raises <paramref name="a"/> element-wise to the power <paramref name="exponent"/>
+    /// (<c>numpy.power</c>).
+    /// </summary>
+    public NdArray Power(NdArray a, double exponent)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        return new NdArray(_np.Call("power", a.PyObject, exponent));
+    }
+
+    /// <summary>
+    /// Clamps all elements of <paramref name="a"/> to [<paramref name="min"/>,
+    /// <paramref name="max"/>] (<c>numpy.clip</c>).
+    /// </summary>
+    public NdArray Clip(NdArray a, double min, double max)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        return new NdArray(_np.Call("clip", a.PyObject, min, max));
+    }
+
+    // ── Sorting ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns a sorted copy of the array along the last axis (<c>numpy.sort</c>).
+    /// </summary>
+    public NdArray Sort(NdArray a)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        return new NdArray(_np.Call("sort", a.PyObject));
+    }
+
+    /// <summary>
+    /// Returns the indices that would sort <paramref name="a"/> along the last axis
+    /// (<c>numpy.argsort</c>).
+    /// </summary>
+    public NdArray ArgSort(NdArray a)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        return new NdArray(_np.Call("argsort", a.PyObject));
+    }
+
+    // ── Shape manipulation (Tier 2) ───────────────────────────────────────
+
+    /// <summary>
+    /// Broadcasts <paramref name="a"/> to <paramref name="shape"/> without copying data
+    /// (<c>numpy.broadcast_to</c>). The result is read-only.
+    /// </summary>
+    public NdArray BroadcastTo(NdArray a, long[] shape)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        ArgumentNullException.ThrowIfNull(shape);
+        var kwargs = new Dictionary<string, object?> { ["shape"] = shape };
+        var args = new object?[] { a.PyObject };
+        return new NdArray(_np.Call("broadcast_to", args, kwargs));
+    }
+
+    /// <summary>
+    /// Pads <paramref name="a"/> with <paramref name="before"/> elements before and
+    /// <paramref name="after"/> elements after each axis using the given <paramref name="mode"/>
+    /// (<c>numpy.pad</c>).
+    /// </summary>
+    /// <param name="a">Array to pad.</param>
+    /// <param name="before">Number of elements to prepend to every axis.</param>
+    /// <param name="after">Number of elements to append to every axis.</param>
+    /// <param name="mode">Padding mode string, e.g. <c>"constant"</c>, <c>"edge"</c>, <c>"reflect"</c>.</param>
+    public NdArray Pad(NdArray a, long before, long after, string mode = "constant")
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        ArgumentNullException.ThrowIfNull(mode);
+        // pad_width as a single (before, after) tuple applies uniformly to all axes
+        var padWidth = new object?[] { before, after };
+        var kwargs = new Dictionary<string, object?> { ["mode"] = mode };
+        var args = new object?[] { a.PyObject, padWidth };
+        return new NdArray(_np.Call("pad", args, kwargs));
+    }
+
+    /// <summary>
+    /// Returns the sorted unique elements of <paramref name="a"/> (<c>numpy.unique</c>).
+    /// </summary>
+    public NdArray Unique(NdArray a)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        return new NdArray(_np.Call("unique", a.PyObject));
+    }
+
+    /// <summary>
+    /// Constructs an array by repeating <paramref name="a"/> the number of times given
+    /// by <paramref name="reps"/> per axis (<c>numpy.tile</c>).
+    /// </summary>
+    public NdArray Tile(NdArray a, long[] reps)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        ArgumentNullException.ThrowIfNull(reps);
+        return new NdArray(_np.Call("tile", a.PyObject, (object?)reps));
+    }
+
     // ── IDisposable ───────────────────────────────────────────────────────
 
     /// <summary>

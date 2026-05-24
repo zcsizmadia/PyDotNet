@@ -1,3 +1,4 @@
+using PyDotNet.Exceptions;
 using PyDotNet.Native;
 using PyDotNet.Types;
 
@@ -258,6 +259,274 @@ public sealed class DataFrame : IDisposable
             && NativeMethods.PyObject_HasAttrString(obj.Handle, "shape") != 0;
     }
 
+    // ── Extended operations ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the first <paramref name="n"/> rows of the DataFrame.
+    /// </summary>
+    public DataFrame Head(int n = 5)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var fn = _obj.GetAttr("head");
+        using var result = fn.Call(n);
+        return FromPyObject(result);
+    }
+
+    /// <summary>
+    /// Returns the last <paramref name="n"/> rows of the DataFrame.
+    /// </summary>
+    public DataFrame Tail(int n = 5)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var fn = _obj.GetAttr("tail");
+        using var result = fn.Call(n);
+        return FromPyObject(result);
+    }
+
+    /// <summary>
+    /// Returns a new DataFrame sorted by <paramref name="column"/>.
+    /// </summary>
+    /// <param name="column">Column to sort by.</param>
+    /// <param name="descending">When <see langword="true"/>, sort in descending order.</param>
+    public DataFrame Sort(string column, bool descending = false)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(column);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (IsPandas())
+        {
+            using var fn = _obj.GetAttr("sort_values");
+            using var result = fn.Call(
+                [column],
+                new Dictionary<string, object?> { ["ascending"] = !descending });
+            return FromPyObject(result);
+        }
+        else
+        {
+            using var fn = _obj.GetAttr("sort");
+            using var result = fn.Call(
+                [column],
+                new Dictionary<string, object?> { ["descending"] = descending });
+            return FromPyObject(result);
+        }
+    }
+
+    /// <summary>
+    /// Returns rows where <paramref name="column"/> equals <paramref name="value"/>.
+    /// </summary>
+    public DataFrame Filter(string column, object value)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(column);
+        ArgumentNullException.ThrowIfNull(value);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        // Build boolean mask: df[column].eq(value)  (works for both Pandas and Polars)
+        // Call([value]) converts 'value' to Python internally while holding the GIL.
+        using var series = this[column];
+        using var eqFn = series.PyObj.GetAttr("eq");
+        using var mask = eqFn.Call([value]);
+
+        if (IsPandas())
+        {
+            // Pandas: df[bool_mask]
+            using var gil = new GilScope();
+            var result = NativeMethods.PyObject_GetItem(_obj.Handle, mask.Handle);
+            if (result == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+            return new DataFrame(PyObject.FromNewReference(result));
+        }
+        else
+        {
+            // Polars: df.filter(bool_mask)
+            using var fn = _obj.GetAttr("filter");
+            using var result = fn.Call([mask]);
+            return FromPyObject(result);
+        }
+    }
+
+    /// <summary>
+    /// Returns a new DataFrame without the specified columns.
+    /// </summary>
+    public DataFrame Drop(params string[] columns)
+    {
+        ArgumentNullException.ThrowIfNull(columns);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (IsPandas())
+        {
+            using var fn = _obj.GetAttr("drop");
+            using var result = fn.Call(
+                [],
+                new Dictionary<string, object?> { ["columns"] = columns });
+            return FromPyObject(result);
+        }
+        else
+        {
+            // Polars: df.drop([col1, col2])
+            using var fn = _obj.GetAttr("drop");
+            using var result = fn.Call([columns]);
+            return FromPyObject(result);
+        }
+    }
+
+    /// <summary>
+    /// Returns a new DataFrame with column <paramref name="oldName"/> renamed to <paramref name="newName"/>.
+    /// </summary>
+    public DataFrame Rename(string oldName, string newName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(oldName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(newName);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        var mapping = new Dictionary<string, object?> { [oldName] = newName };
+
+        if (IsPandas())
+        {
+            using var fn = _obj.GetAttr("rename");
+            using var result = fn.Call(
+                [],
+                new Dictionary<string, object?> { ["columns"] = mapping });
+            return FromPyObject(result);
+        }
+        else
+        {
+            using var fn = _obj.GetAttr("rename");
+            using var result = fn.Call([mapping]);
+            return FromPyObject(result);
+        }
+    }
+
+    /// <summary>
+    /// Returns a new DataFrame with null/NaN values replaced by <paramref name="value"/>.
+    /// </summary>
+    public DataFrame FillNull(double value)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (IsPandas())
+        {
+            using var fn = _obj.GetAttr("fillna");
+            using var result = fn.Call(value);
+            return FromPyObject(result);
+        }
+        else
+        {
+            using var fn = _obj.GetAttr("fill_null");
+            using var result = fn.Call(value);
+            return FromPyObject(result);
+        }
+    }
+
+    /// <summary>
+    /// Joins this DataFrame with <paramref name="other"/> on a common key column.
+    /// </summary>
+    /// <param name="other">The DataFrame to join with.</param>
+    /// <param name="on">Column name to join on.</param>
+    /// <param name="how">Join type: <c>"inner"</c>, <c>"left"</c>, <c>"right"</c>, <c>"outer"</c>.</param>
+    public DataFrame Join(DataFrame other, string on, string how = "inner")
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        ArgumentException.ThrowIfNullOrWhiteSpace(on);
+        ArgumentException.ThrowIfNullOrWhiteSpace(how);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (IsPandas())
+        {
+            using var fn = _obj.GetAttr("merge");
+            using var result = fn.Call(
+                [other._obj],
+                new Dictionary<string, object?> { ["on"] = on, ["how"] = how });
+            return FromPyObject(result);
+        }
+        else
+        {
+            using var fn = _obj.GetAttr("join");
+            using var result = fn.Call(
+                [other._obj],
+                new Dictionary<string, object?> { ["on"] = on, ["how"] = how });
+            return FromPyObject(result);
+        }
+    }
+
+    /// <summary>
+    /// Computes descriptive statistics for all numeric columns (<c>df.describe()</c>).
+    /// Returns a new DataFrame with rows for count, mean, std, min, quartiles, and max.
+    /// </summary>
+    public DataFrame Describe()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var fn = _obj.GetAttr("describe");
+        using var result = fn.Call();
+        return FromPyObject(result);
+    }
+
+    /// <summary>
+    /// Groups by <paramref name="groupColumn"/> and returns the sum of <paramref name="valueColumn"/>
+    /// per group as a new DataFrame.
+    /// </summary>
+    public DataFrame GroupBySum(string groupColumn, string valueColumn)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(groupColumn);
+        ArgumentException.ThrowIfNullOrWhiteSpace(valueColumn);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        return GroupByAgg(groupColumn, valueColumn, "sum");
+    }
+
+    /// <summary>
+    /// Groups by <paramref name="groupColumn"/> and returns the mean of <paramref name="valueColumn"/>
+    /// per group as a new DataFrame.
+    /// </summary>
+    public DataFrame GroupByMean(string groupColumn, string valueColumn)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(groupColumn);
+        ArgumentException.ThrowIfNullOrWhiteSpace(valueColumn);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        return GroupByAgg(groupColumn, valueColumn, "mean");
+    }
+
+    /// <summary>
+    /// Saves the DataFrame to a CSV file at <paramref name="path"/>.
+    /// </summary>
+    public void ToCsv(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (IsPandas())
+        {
+            using var fn = _obj.GetAttr("to_csv");
+            using var _ = fn.Call(
+                [path],
+                new Dictionary<string, object?> { ["index"] = false });
+        }
+        else
+        {
+            using var fn = _obj.GetAttr("write_csv");
+            using var _ = fn.Call(path);
+        }
+    }
+
+    /// <summary>
+    /// Saves the DataFrame to a Parquet file at <paramref name="path"/>.
+    /// </summary>
+    public void ToParquet(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (IsPandas())
+        {
+            using var fn = _obj.GetAttr("to_parquet");
+            using var _ = fn.Call(path);
+        }
+        else
+        {
+            using var fn = _obj.GetAttr("write_parquet");
+            using var _ = fn.Call(path);
+        }
+    }
+
     // ── Disposal ──────────────────────────────────────────────────────────
 
     /// <summary>Releases the Python object reference.</summary>
@@ -342,5 +611,115 @@ public sealed class DataFrame : IDisposable
         }
 
         return names;
+    }
+
+    // Returns true when the underlying Python object is a Pandas DataFrame.
+    // Detection: sort_values is Pandas-specific (Polars uses sort).
+    private bool IsPandas()
+    {
+        using var gil = new GilScope();
+        return NativeMethods.PyObject_HasAttrString(_obj.Handle, "sort_values") != 0;
+    }
+
+    // Shared implementation for GroupBySum / GroupByMean.
+    private DataFrame GroupByAgg(string groupColumn, string valueColumn, string aggFunc)
+    {
+        using var gil = new GilScope();
+
+        if (IsPandas())
+        {
+            // df.groupby(groupColumn)[valueColumn].sum/mean().reset_index()
+            var groupbyFn = NativeMethods.PyObject_GetAttrString(_obj.Handle, "groupby");
+            if (groupbyFn == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+
+            var groupColStr = NativeMethods.PyUnicode_FromString(groupColumn);
+            var argTuple = NativeMethods.PyTuple_New(1);
+            _ = NativeMethods.PyTuple_SetItem(argTuple, 0, groupColStr); // steals ref
+            var grouped = NativeMethods.PyObject_CallObject(groupbyFn, argTuple);
+            NativeMethods.Py_DecRef(argTuple);
+            NativeMethods.Py_DecRef(groupbyFn);
+            if (grouped == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+
+            // grouped[valueColumn]
+            var pyValKey = NativeMethods.PyUnicode_FromString(valueColumn);
+            var seriesGroupBy = NativeMethods.PyObject_GetItem(grouped, pyValKey);
+            NativeMethods.Py_DecRef(pyValKey);
+            NativeMethods.Py_DecRef(grouped);
+            if (seriesGroupBy == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+
+            // .sum() / .mean()
+            var aggMethod = NativeMethods.PyObject_GetAttrString(seriesGroupBy, aggFunc);
+            NativeMethods.Py_DecRef(seriesGroupBy);
+            if (aggMethod == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+            var aggregated = NativeMethods.PyObject_CallObject(aggMethod, IntPtr.Zero);
+            NativeMethods.Py_DecRef(aggMethod);
+            if (aggregated == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+
+            // .reset_index()
+            var resetFn = NativeMethods.PyObject_GetAttrString(aggregated, "reset_index");
+            NativeMethods.Py_DecRef(aggregated);
+            if (resetFn == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+            var result = NativeMethods.PyObject_CallObject(resetFn, IntPtr.Zero);
+            NativeMethods.Py_DecRef(resetFn);
+            if (result == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+
+            return new DataFrame(PyObject.FromNewReference(result));
+        }
+        else
+        {
+            // Polars: df.group_by(groupColumn).agg(pl.col(valueColumn).sum/mean())
+            var polarsMod = NativeMethods.PyImport_ImportModule("polars");
+            if (polarsMod == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+
+            try
+            {
+                // pl.col(valueColumn)
+                var colFn = NativeMethods.PyObject_GetAttrString(polarsMod, "col");
+                if (colFn == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+                var valStr = NativeMethods.PyUnicode_FromString(valueColumn);
+                var colArgTuple = NativeMethods.PyTuple_New(1);
+                _ = NativeMethods.PyTuple_SetItem(colArgTuple, 0, valStr);
+                var colExpr = NativeMethods.PyObject_CallObject(colFn, colArgTuple);
+                NativeMethods.Py_DecRef(colArgTuple);
+                NativeMethods.Py_DecRef(colFn);
+                if (colExpr == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+
+                // .sum() / .mean() on expression
+                var aggOnExpr = NativeMethods.PyObject_GetAttrString(colExpr, aggFunc);
+                NativeMethods.Py_DecRef(colExpr);
+                if (aggOnExpr == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+                var aggExpr = NativeMethods.PyObject_CallObject(aggOnExpr, IntPtr.Zero);
+                NativeMethods.Py_DecRef(aggOnExpr);
+                if (aggExpr == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+
+                // df.group_by(groupColumn)
+                var groupByFn = NativeMethods.PyObject_GetAttrString(_obj.Handle, "group_by");
+                if (groupByFn == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+                var grpColStr = NativeMethods.PyUnicode_FromString(groupColumn);
+                var grpArgTuple = NativeMethods.PyTuple_New(1);
+                _ = NativeMethods.PyTuple_SetItem(grpArgTuple, 0, grpColStr);
+                var groupedObj = NativeMethods.PyObject_CallObject(groupByFn, grpArgTuple);
+                NativeMethods.Py_DecRef(grpArgTuple);
+                NativeMethods.Py_DecRef(groupByFn);
+                if (groupedObj == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+
+                // .agg(aggExpr)
+                var aggFn = NativeMethods.PyObject_GetAttrString(groupedObj, "agg");
+                NativeMethods.Py_DecRef(groupedObj);
+                if (aggFn == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+                var aggArgTuple = NativeMethods.PyTuple_New(1);
+                _ = NativeMethods.PyTuple_SetItem(aggArgTuple, 0, aggExpr);
+                var result = NativeMethods.PyObject_CallObject(aggFn, aggArgTuple);
+                NativeMethods.Py_DecRef(aggArgTuple);
+                NativeMethods.Py_DecRef(aggFn);
+                if (result == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+
+                return new DataFrame(PyObject.FromNewReference(result));
+            }
+            finally
+            {
+                NativeMethods.Py_DecRef(polarsMod);
+            }
+        }
     }
 }

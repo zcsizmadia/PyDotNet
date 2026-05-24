@@ -114,6 +114,72 @@ public sealed class MatplotlibModule : IDisposable
         return new Figure(figObj, new Axes(axObj));
     }
 
+    /// <summary>
+    /// Creates a grid of <paramref name="rows"/> × <paramref name="cols"/> subplots.
+    /// </summary>
+    /// <param name="rows">Number of subplot rows.</param>
+    /// <param name="cols">Number of subplot columns.</param>
+    /// <param name="widthInches">Figure width in inches (default 12).</param>
+    /// <param name="heightInches">Figure height in inches (default 8).</param>
+    /// <param name="dpi">Resolution for raster formats in dots per inch (default 100).</param>
+    /// <returns>
+    /// A tuple containing the <see cref="Figure"/> and a [rows, cols] grid of <see cref="Axes"/>.
+    /// The <see cref="Figure"/> does <b>not</b> own the axes; dispose each <see cref="Axes"/> in the grid
+    /// before disposing the <see cref="Figure"/>.
+    /// </returns>
+    public (Figure Figure, Axes[,] Axes) Subplots(
+        int rows, int cols,
+        double widthInches = 12.0, double heightInches = 8.0, int dpi = 100)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(rows, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(cols, 1);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        // squeeze=False guarantees axes is always a 2-D ndarray regardless of shape.
+        using var result = _pyplot.Call(
+            "subplots",
+            [(object?)rows, (object?)cols],
+            new Dictionary<string, object?> { ["figsize"] = (widthInches, heightInches), ["dpi"] = dpi, ["squeeze"] = false });
+
+        using var gil = new GilScope();
+
+        var figHandle  = NativeMethods.PyTuple_GetItem(result.Handle, 0);
+        var axesHandle = NativeMethods.PyTuple_GetItem(result.Handle, 1);
+
+        if (figHandle == IntPtr.Zero || axesHandle == IntPtr.Zero)
+        {
+            PythonException.ThrowIfPythonErrorOccurred();
+        }
+
+        NativeMethods.Py_IncRef(figHandle);
+        var figObj = PyObject.FromNewReference(figHandle);
+
+        // Build the C# Axes[rows, cols] grid by indexing into the numpy 2-D array.
+        var axesGrid = new Axes[rows, cols];
+        for (int r = 0; r < rows; r++)
+        {
+            // axes[r] → 1-D row array (borrowed ref from numpy row)
+            var rowHandle = NativeMethods.PySequence_GetItem(axesHandle, r);
+            if (rowHandle == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+            try
+            {
+                for (int c = 0; c < cols; c++)
+                {
+                    var axHandle = NativeMethods.PySequence_GetItem(rowHandle, c);
+                    if (axHandle == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+                    axesGrid[r, c] = new Axes(PyObject.FromNewReference(axHandle));
+                }
+            }
+            finally
+            {
+                NativeMethods.Py_DecRef(rowHandle);
+            }
+        }
+
+        // Figure gets axes[0,0] as its primary Axes, but does NOT own the grid (ownsAxes=false).
+        return (new Figure(figObj, axesGrid[0, 0], ownsAxes: false), axesGrid);
+    }
+
     /// <inheritdoc/>
     public void Dispose()
     {

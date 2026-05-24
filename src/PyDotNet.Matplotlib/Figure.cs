@@ -16,15 +16,17 @@ namespace PyDotNet.Matplotlib;
 public sealed class Figure : IDisposable
 {
     private readonly PyObject _fig;
+    private readonly bool _ownsAxes;
     private bool _disposed;
 
     /// <summary>The primary subplot axes created with this figure.</summary>
     public Axes Axes { get; }
 
-    internal Figure(PyObject fig, Axes axes)
+    internal Figure(PyObject fig, Axes axes, bool ownsAxes = true)
     {
         _fig = fig;
         Axes = axes;
+        _ownsAxes = ownsAxes;
     }
 
     // ── Rendering ─────────────────────────────────────────────────────────
@@ -39,6 +41,26 @@ public sealed class Figure : IDisposable
     /// Renders the figure to an SVG byte array.
     /// </summary>
     public byte[] SaveToSvg() => SaveToBytes("svg", dpi: 72);
+
+    /// <summary>
+    /// Renders the figure to a PDF byte array.
+    /// </summary>
+    public byte[] SaveToPdf() => SaveToBytes("pdf", dpi: 72);
+
+    /// <summary>
+    /// Calls <c>fig.tight_layout()</c> to automatically adjust subplot parameters
+    /// so that the subplots fit into the figure area without overlapping.
+    /// </summary>
+    public void Tight()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var gil = new GilScope();
+        var result = CallNoArgMethod(_fig.Handle, "tight_layout");
+        if (result != IntPtr.Zero)
+        {
+            NativeMethods.Py_DecRef(result);
+        }
+    }
 
     /// <summary>
     /// Renders the figure to a byte array in the given format.
@@ -235,7 +257,11 @@ public sealed class Figure : IDisposable
         }
 
         _disposed = true;
-        Axes.Dispose();
+        if (_ownsAxes)
+        {
+            Axes.Dispose();
+        }
+
         _fig.Dispose();
     }
 }

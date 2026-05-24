@@ -98,6 +98,80 @@ try
     }
 
     Console.WriteLine();
+
+    // ── 7. Sorting, ArgMin/ArgMax, Cumsum ────────────────────────────────
+    Console.WriteLine("7. Sort / ArgSort / ArgMin / ArgMax / Cumsum");
+    using var scores  = np.FromSpan<double>(new double[] { 82.5, 91.0, 67.3, 95.2, 78.8 });
+    using var sorted  = scores.Sorted();
+    using var indices = scores.ArgSort();
+
+    Console.Write("   Sorted scores : ");
+    foreach (var v in sorted.AsSpan<double>()) Console.Write($"{v:F1} ");
+    Console.WriteLine();
+
+    Console.Write("   Ranking (indices): ");
+    foreach (var idx in indices.AsSpan<long>()) Console.Write($"{idx} ");
+    Console.WriteLine();
+
+    Console.WriteLine($"   Best score index={scores.ArgMax()}, worst index={scores.ArgMin()}");
+
+    using var running = scores.Cumsum();
+    Console.Write("   Running total  : ");
+    foreach (var v in running.AsSpan<double>()) Console.Write($"{v:F1} ");
+    Console.WriteLine();
+
+    Console.WriteLine();
+
+    // ── 8. Clip + Power + Log10 ──────────────────────────────────────────
+    Console.WriteLine("8. Clip / Power / Log10 — signal processing snippet");
+    np.Random.Seed(5);
+    using var signal    = np.Random.Normal(new long[] { 8 }, loc: 0.0, scale: 1.5);
+    using var rectified = signal.Clip(0.0, double.MaxValue);   // ReLU
+    Console.Write("   Signal    : ");
+    foreach (var v in signal.AsSpan<double>()) Console.Write($"{v,6:F2} ");
+    Console.WriteLine();
+    Console.Write("   Rectified : ");
+    foreach (var v in rectified.AsSpan<double>()) Console.Write($"{v,6:F2} ");
+    Console.WriteLine();
+
+    using var power = np.Power(rectified + 0.001, 2.0);
+    using var dB    = np.Log10(power) * 20.0;
+    Console.Write("   dB        : ");
+    foreach (var v in dB.AsSpan<double>()) Console.Write($"{v,6:F1} ");
+    Console.WriteLine();
+
+    Console.WriteLine();
+
+    // ── 9. Pad + Tile + Unique ───────────────────────────────────────────
+    Console.WriteLine("9. Pad / Tile / Unique");
+    using var kernel = np.FromSpan<double>(new double[] { 0.25, 0.5, 0.25 });
+    using var padded = np.Pad(kernel, before: 2, after: 2);
+    Console.WriteLine($"   Padded kernel length={padded.ElementCount}  sum={padded.Sum():F4}");
+
+    using var tiled = np.Tile(kernel, new long[] { 4 });
+    Console.WriteLine($"   Tiled  kernel length={tiled.ElementCount}  sum={tiled.Sum():F4}");
+
+    using var labels = np.FromSpan<double>(new double[] { 2, 1, 3, 1, 2, 3, 3, 1 });
+    using var unique = np.Unique(labels);
+    Console.Write("   Unique labels: ");
+    foreach (var v in unique.AsSpan<double>()) Console.Write($"{v} ");
+    Console.WriteLine();
+
+    Console.WriteLine();
+
+    // ── 10. Exponential / Poisson / Permutation ──────────────────────────
+    Console.WriteLine("10. Exponential / Poisson / Permutation distributions");
+    np.Random.Seed(42);
+    using var expArr  = np.Random.Exponential(new long[] { 10_000 }, scale: 3.0);
+    using var poisArr = np.Random.Poisson(new long[] { 10_000 }, lam: 5.0);
+    using var perm    = np.Random.Permutation(8);
+    Console.WriteLine($"   Exponential(scale=3): mean={expArr.Mean():F3}  (expected ≈ 3)");
+    Console.WriteLine($"   Poisson(lam=5):       mean={poisArr.Mean():F3}  (expected ≈ 5)");
+    Console.Write("   Permutation(8):       ");
+    foreach (var v in perm.AsSpan<long>()) Console.Write($"{v} ");
+    Console.WriteLine();
+
+    Console.WriteLine();
     Console.WriteLine("Done.");
 }
 finally

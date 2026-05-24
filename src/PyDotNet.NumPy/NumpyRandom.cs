@@ -97,4 +97,69 @@ public sealed class NumpyRandom
         using var fn = _random.GetAttr("standard_normal");
         return new NdArray(fn.Call(Array.Empty<object?>(), kwargs));
     }
+
+    /// <summary>
+    /// Draws samples from an exponential distribution.
+    /// Equivalent to <c>numpy.random.exponential(scale, size=shape)</c>.
+    /// </summary>
+    /// <param name="shape">Shape of the output array.</param>
+    /// <param name="scale">Scale (inverse rate) of the distribution (default 1.0).</param>
+    public NdArray Exponential(long[] shape, double scale = 1.0)
+    {
+        ArgumentNullException.ThrowIfNull(shape);
+        var kwargs = new Dictionary<string, object?>
+        {
+            ["scale"] = scale,
+            ["size"]  = shape,
+        };
+        using var fn = _random.GetAttr("exponential");
+        return new NdArray(fn.Call(Array.Empty<object?>(), kwargs));
+    }
+
+    /// <summary>
+    /// Draws samples from a Poisson distribution.
+    /// Equivalent to <c>numpy.random.poisson(lam, size=shape)</c>.
+    /// </summary>
+    /// <param name="shape">Shape of the output array.</param>
+    /// <param name="lam">Expected number of events (λ, default 1.0).</param>
+    public NdArray Poisson(long[] shape, double lam = 1.0)
+    {
+        ArgumentNullException.ThrowIfNull(shape);
+        var kwargs = new Dictionary<string, object?>
+        {
+            ["lam"]  = lam,
+            ["size"] = shape,
+        };
+        using var fn = _random.GetAttr("poisson");
+        return new NdArray(fn.Call(Array.Empty<object?>(), kwargs));
+    }
+
+    /// <summary>
+    /// Generates random samples from <c>arange(n)</c>.
+    /// Equivalent to <c>numpy.random.choice(n, size=shape, replace=replace)</c>.
+    /// </summary>
+    /// <param name="n">Population size; samples are drawn from [0, n).</param>
+    /// <param name="shape">Shape of the output array.</param>
+    /// <param name="replace">Whether to sample with replacement (default <see langword="true"/>).</param>
+    public NdArray Choice(long n, long[] shape, bool replace = true)
+    {
+        ArgumentNullException.ThrowIfNull(shape);
+        var kwargs = new Dictionary<string, object?>
+        {
+            ["size"]    = shape,
+            ["replace"] = replace,
+        };
+        using var fn = _random.GetAttr("choice");
+        return new NdArray(fn.Call(new object?[] { n }, kwargs));
+    }
+
+    /// <summary>
+    /// Returns a random permutation of integers in [0, <paramref name="n"/>).
+    /// Equivalent to <c>numpy.random.permutation(n)</c>.
+    /// </summary>
+    public NdArray Permutation(long n)
+    {
+        using var fn = _random.GetAttr("permutation");
+        return new NdArray(fn.Call(n));
+    }
 }

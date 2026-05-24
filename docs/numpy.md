@@ -101,6 +101,16 @@ var (meanA, meanB, meanC) = await (a.MeanAsync(), b.MeanAsync(), c.MeanAsync())
 | `Concatenate(NdArray[], int axis)` | Concatenate along an existing axis. |
 | `ExpandDims(NdArray, int axis)` | Insert a new axis. |
 | `AsContiguousArray(NdArray)` | Return C-contiguous copy if needed. |
+| `Where(condition, x, y)` | Element-wise conditional selection (`numpy.where`). |
+| `Log2(a)` / `Log10(a)` | Base-2 / base-10 logarithm. |
+| `Power(a, exponent)` | Element-wise power (`numpy.power`). |
+| `Clip(a, min, max)` | Module-level element-wise clamp. |
+| `Sort(a)` | Returns sorted copy (last axis, `numpy.sort`). |
+| `ArgSort(a)` | Returns sort-indices array (`numpy.argsort`). |
+| `BroadcastTo(a, shape)` | Broadcast to `shape` without copying (read-only). |
+| `Pad(a, before, after, mode)` | Pad all axes uniformly (`numpy.pad`). |
+| `Unique(a)` | Sorted unique elements (`numpy.unique`). |
+| `Tile(a, reps)` | Repeat array along each axis (`numpy.tile`). |
 | `Random` | `NumpyRandom` sub-object. |
 
 ### `NdArray`
@@ -119,13 +129,21 @@ var (meanA, meanB, meanC) = await (a.MeanAsync(), b.MeanAsync(), c.MeanAsync())
 | `Reshape(params long[])` | Returns a view with new shape. |
 | `Transpose()` | Axes transposed (typically non-contiguous). |
 | `Flatten()` | 1-D C-contiguous copy. |
+| `Squeeze()` | Remove all size-1 dimensions. |
 | `Copy()` | C-contiguous copy. |
 | `AsType(NumpyDType)` | Type-cast copy. |
 | `Clip(min, max)` | Element-wise clamp. |
 | `Dot(NdArray)` | Dot product. |
 | `MatMul(NdArray)` | Matrix multiplication (`@`). |
 | `SumAxis(int) / MeanAxis(int)` | Reduce along one axis (returns `NdArray`). |
-| `Sum / Mean / Std / Min / Max` | Scalar reducers. |
+| `VarAxis(int) / StdAxis(int)` | Variance / std deviation along one axis. |
+| `Sum / Mean / Std / Var / Min / Max` | Scalar reducers. |
+| `ArgMin() / ArgMax()` | Flat index of minimum / maximum element. |
+| `ArgSort()` | Indices that would sort the array (last axis). |
+| `Sorted()` | Returns a sorted copy (does not mutate). |
+| `Cumsum() / Cumprod()` | Cumulative sum / product (flattened). |
+| `Round(int decimals)` | Element-wise rounding. |
+| `Fill(double value)` | In-place fill with a constant. |
 | `SumAsync / MeanAsync / StdAsync / MinAsync / MaxAsync` | Async thread-pool reducers. |
 | `+  −  ×  /` | Element-wise operators (NdArray and scalar). |
 | `AsPyObject()` | Access the raw `PyObject` for advanced interop. |
@@ -141,6 +159,10 @@ Accessed via `NumpyModule.Random`.
 | `Uniform(shape, low, high)` | Uniform distribution. |
 | `Integers(low, high, shape)` | Random integers. |
 | `Standard(shape)` | Standard normal (μ=0, σ=1). |
+| `Exponential(shape, scale)` | Exponential distribution. |
+| `Poisson(shape, lam)` | Poisson distribution. |
+| `Choice(n, shape, replace)` | Random samples from `arange(n)`. |
+| `Permutation(n)` | Random permutation of `[0, n)`. |
 
 ## Real-world examples
 
