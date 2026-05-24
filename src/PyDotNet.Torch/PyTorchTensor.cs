@@ -5,8 +5,9 @@ using PyDotNet.Exceptions;
 using PyDotNet.Marshaling;
 using PyDotNet.Native;
 using PyDotNet.Runtime;
+using PyDotNet.Types;
 
-namespace PyDotNet.Types;
+namespace PyDotNet.Torch;
 
 /// <summary>
 /// Wraps a PyTorch <c>torch.Tensor</c> and exposes gradient tracking, device

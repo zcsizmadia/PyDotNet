@@ -1,5 +1,6 @@
 using PyDotNet.Native;
 using PyDotNet.Runtime;
+using PyDotNet.Torch;
 using PyDotNet.Types;
 
 Console.WriteLine("=== PyDotNet Torch Sample ===");

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>$(DefaultTargetFrameworks)</TargetFrameworks>
+    <OutputType>Library</OutputType>
+    <RootNamespace>PyDotNet.Torch</RootNamespace>
+    <AssemblyName>PyDotNet.Torch</AssemblyName>
+    <Description>PyTorch tensor bindings for PyDotNet — autograd, device movement, and zero-copy DLPack interop.</Description>
+    <PackageTags>python;pytorch;torch;interop;dotnet;zero-copy;dlpack;tensor;autograd</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../PyDotNet/PyDotNet.csproj" />
+  </ItemGroup>
+
+</Project>

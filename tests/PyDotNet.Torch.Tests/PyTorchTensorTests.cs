@@ -1,10 +1,10 @@
 using System.Collections.Generic;
 using PyDotNet.Runtime;
-using PyDotNet.Tests.Infrastructure;
+using PyDotNet.Torch.Tests.Infrastructure;
 using PyDotNet.Types;
 using TUnit.Core.Exceptions;
 
-namespace PyDotNet.Tests.Integration;
+namespace PyDotNet.Torch.Tests;
 
 /// <summary>
 /// Integration tests for <see cref="PyTorchTensor"/>.
@@ -48,10 +48,6 @@ public sealed class PyTorchTensorTests
     private static readonly int[] Shape1x3x1 = [1, 3, 1];
 
     // ── Test infrastructure ───────────────────────────────────────────────
-    //
-    // Torch is imported ONCE per test run in SetUpClassAsync so that
-    // concurrent per-test imports (which are not thread-safe during the
-    // first-ever torch load) cannot race each other.
 
     private static PyInterpreter? _interp;
 
@@ -59,18 +55,6 @@ public sealed class PyTorchTensorTests
     public static async Task SetUpClassAsync()
     {
         await PythonEnvironment.SkipIfUnavailableAsync();
-
-        using var probe = PyRuntime.CreateInterpreter();
-        try
-        {
-            probe.ImportModule("torch").Dispose();
-        }
-        catch (Exception)
-        {
-            throw new SkipTestException(
-                "torch is not installed. Install it with: pip install torch --index-url https://download.pytorch.org/whl/cpu");
-        }
-
         _interp = PyRuntime.CreateInterpreter();
     }
 

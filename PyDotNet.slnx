@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/PyDotNet.DataFrames/PyDotNet.DataFrames.csproj" />
     <Project Path="src/PyDotNet.NumPy/PyDotNet.NumPy.csproj" />
+    <Project Path="src/PyDotNet.Torch/PyDotNet.Torch.csproj" />
     <Project Path="src/PyDotNet/PyDotNet.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -9,6 +10,7 @@
     <Project Path="tests/PyDotNet.NumPy.Tests/PyDotNet.NumPy.Tests.csproj" />
     <Project Path="tests/PyDotNet.Snippets.Tests/PyDotNet.Snippets.Tests.csproj" />
     <Project Path="tests/PyDotNet.Tests/PyDotNet.Tests.csproj" />
+    <Project Path="tests/PyDotNet.Torch.Tests/PyDotNet.Torch.Tests.csproj" />
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/PyDotNet.Sample.Basic/PyDotNet.Sample.Basic.csproj" />

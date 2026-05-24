@@ -12,7 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../src/PyDotNet/PyDotNet.csproj" />
+    <ProjectReference Include="../../src/PyDotNet.Torch/PyDotNet.Torch.csproj" />
   </ItemGroup>
 
 </Project>
