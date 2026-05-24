@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>$(DefaultTargetFrameworks)</TargetFrameworks>
+    <OutputType>Library</OutputType>
+    <RootNamespace>PyDotNet.Matplotlib</RootNamespace>
+    <AssemblyName>PyDotNet.Matplotlib</AssemblyName>
+    <Description>Matplotlib bindings for PyDotNet — render figures to PNG/SVG byte arrays from any .NET thread using the headless Agg backend.</Description>
+    <PackageTags>python;matplotlib;plotting;charts;interop;dotnet;png;svg;headless</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IsPackable>true</IsPackable>
+    <PackageReadmeFile>matplotlib.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)../../docs/matplotlib.md"
+          Pack="true" PackagePath="/"
+          Condition="Exists('$(MSBuildThisFileDirectory)../../docs/matplotlib.md')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../PyDotNet/PyDotNet.csproj" />
+  </ItemGroup>
+
+</Project>

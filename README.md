@@ -5,7 +5,7 @@ A modern, high-performance, async-aware, zero-copy Python ↔ .NET interop runti
 PyDotNet embeds CPython directly inside your .NET process. No subprocess, no sockets, no serialisation — just raw function calls across the language boundary with full GIL awareness and optional zero-copy memory sharing.
 
 > **Plugin packages** — typed, idiomatic C# wrappers for popular Python libraries ship as separate NuGet packages built on top of PyDotNet core:
-> [`PyDotNet.NumPy`](docs/numpy.md) · [`PyDotNet.DataFrames`](docs/dataframes.md) · [`PyDotNet.Torch`](docs/torch.md) · `PyDotNet.LangChain` _(planned)_ · `PyDotNet.Matplotlib` _(planned)_
+> [`PyDotNet.NumPy`](docs/numpy.md) · [`PyDotNet.DataFrames`](docs/dataframes.md) · [`PyDotNet.Torch`](docs/torch.md) · [`PyDotNet.Matplotlib`](docs/matplotlib.md) · `PyDotNet.LangChain` _(planned)_
 
 [![Sponsor me](https://img.shields.io/badge/Sponsor-me-pink?style=flat&logo=github-sponsors)](https://github.com/sponsors/zcsizmadia)
 [![Build](https://github.com/zcsizmadia/PyDotNet/actions/workflows/build.yml/badge.svg)](https://github.com/zcsizmadia/PyDotNet/actions/workflows/build.yml)
@@ -1276,7 +1276,7 @@ Each plugin is a separate NuGet package with zero-copy data sharing, async reduc
 | **Pandas + Polars** | `PyDotNet.DataFrames` | ✅ Released | [docs/dataframes.md](docs/dataframes.md) |
 | **PyTorch** | `PyDotNet.Torch` | ✅ Released | [docs/torch.md](docs/torch.md) |
 | **LangChain** | `PyDotNet.LangChain` | 🗓 Planned | — |
-| **Matplotlib** | `PyDotNet.Matplotlib` | 🗓 Planned | — |
+| **Matplotlib** | `PyDotNet.Matplotlib` | ✅ Released | [docs/matplotlib.md](docs/matplotlib.md) |
 
 ### Python API coverage
 
@@ -1287,6 +1287,7 @@ Each plugin wraps a focused subset of the underlying Python library's API. The t
 | **PyDotNet.NumPy** | ~55 | ~600 | Shape/dtype metadata; zero-copy `Span<T>`/`Memory<T>` via DLPack; `reshape`, `transpose`, `flatten`, `squeeze`, `copy`, `astype`, `clip`, `dot`, `matmul`; reductions (`sum`, `mean`, `std`, `min`, `max`) with async overloads; element-wise math (`abs`, `sqrt`, `square`, `exp`, `log`); C# operator overloads; array builders (`zeros`, `ones`, `arange`, `linspace`, `eye`, `full`); `stack`, `concatenate`, `expand_dims` | `sort`/`argsort`, `where`, `broadcast_to`, `pad`, `linalg.*`, `fft.*`, advanced indexing, most of `random.*` |
 | **PyDotNet.DataFrames** | ~20 | ~500 (Pandas) / ~300 (Polars) | Construction from .NET dictionaries; CSV/Parquet/JSON read; column listing; row count; column indexing; `Select` (column projection); zero-copy Apache Arrow batch export; typed element extraction from `Series` | filter/query, groupby/aggregate, merge/join, sort, apply/map, describe/info, to_csv/to_parquet, pivot |
 | **PyDotNet.Torch** | ~35 | ~700 | Autograd (`requires_grad`, `grad`, `backward`, `detach`); device movement (`to`, `cpu`, `cuda`); arithmetic (`+`, `-`, `*`, `/`, `@`, unary `-`); shape (`reshape`, `view`, `transpose`, `.T`, `squeeze`, `unsqueeze`); reductions (`mean`, `sum`); element-wise math (`abs`, `exp`, `log`, `sqrt`); activations (`relu`, `sigmoid`, `tanh`, `softmax`); data access (`item`, DLPack, buffer protocol); factory (`zeros`, `ones`, `empty`, `from_dlpack`) | `clone`, `contiguous`, `permute`, `cat`/`stack`, `max`/`min`, `norm`, `clamp`, index/slice access, in-place variants |
+| **PyDotNet.Matplotlib** | ~15 | ~500 | Figure/axes creation; line (`plot`), scatter, bar, histogram; title/xlabel/ylabel; legend; grid; axis limits (`set_xlim`, `set_ylim`); PNG/SVG/PDF rendering via headless Agg backend | Subplots grid (`subplots(m,n)`), twin axes, log scale, color bars, 3-D plots, `imshow`, animation, custom tickers |
 
 ## Roadmap
 
