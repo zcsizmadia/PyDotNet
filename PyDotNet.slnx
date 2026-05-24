@@ -17,6 +17,7 @@
     <Project Path="samples/PyDotNet.Sample.Async/PyDotNet.Sample.Async.csproj" />
     <Project Path="samples/PyDotNet.Sample.Kwargs/PyDotNet.Sample.Kwargs.csproj" />
     <Project Path="samples/PyDotNet.Sample.NumPy/PyDotNet.Sample.NumPy.csproj" />
+    <Project Path="samples/PyDotNet.Sample.Torch/PyDotNet.Sample.Torch.csproj" />
     <Project Path="samples/PyDotNet.Sample.Tuples/PyDotNet.Sample.Tuples.csproj" />
     <Project Path="samples/PyDotNet.Sample.TypedCollections/PyDotNet.Sample.TypedCollections.csproj" />
     <Project Path="samples/PyDotNet.Sample.AsyncGenerators/PyDotNet.Sample.AsyncGenerators.csproj" />
