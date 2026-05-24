@@ -7,9 +7,9 @@ namespace PyDotNet.Types;
 /// Represents a tensor (e.g. from NumPy, PyTorch, JAX) exposed to .NET.
 /// Carries device, dtype, and shape metadata along with the underlying Python object.
 /// </summary>
-public sealed class PyTensor : PyObject
+public class PyTensor : PyObject
 {
-    private PyTensor(IntPtr handle, TensorDevice device, TensorDataType dataType, long[] shape)
+    private protected PyTensor(IntPtr handle, TensorDevice device, TensorDataType dataType, long[] shape)
         : base(handle)
     {
         Device = device;
@@ -61,7 +61,7 @@ public sealed class PyTensor : PyObject
     /// <summary>
     /// Acquires a zero-copy buffer view of the tensor data (CPU tensors only).
     /// </summary>
-    public PyBuffer AsTensorBuffer(bool writable = false)
+    public virtual PyBuffer AsTensorBuffer(bool writable = false)
     {
         if (Device != TensorDevice.Cpu)
         {
@@ -95,7 +95,7 @@ public sealed class PyTensor : PyObject
 
     // ── Metadata detection ────────────────────────────────────────────────
 
-    private static TensorDevice DetectDevice(IntPtr obj)
+    private protected static TensorDevice DetectDevice(IntPtr obj)
     {
         // PyTorch tensors have a .device attribute
         var deviceAttr = NativeMethods.PyObject_GetAttrString(obj, "device");
@@ -141,7 +141,7 @@ public sealed class PyTensor : PyObject
         return TensorDevice.Cpu;
     }
 
-    private static TensorDataType DetectDataType(IntPtr obj)
+    private protected static TensorDataType DetectDataType(IntPtr obj)
     {
         // Try .dtype.name (NumPy / PyTorch)
         var dtypeAttr = NativeMethods.PyObject_GetAttrString(obj, "dtype");
@@ -199,7 +199,7 @@ public sealed class PyTensor : PyObject
         }
     }
 
-    private static long[] DetectShape(IntPtr obj)
+    private protected static long[] DetectShape(IntPtr obj)
     {
         var shapeAttr = NativeMethods.PyObject_GetAttrString(obj, "shape");
         if (shapeAttr == IntPtr.Zero)
@@ -233,7 +233,7 @@ public sealed class PyTensor : PyObject
         }
     }
 
-    private static TensorDataType ParseDtypeName(string name) =>
+    private protected static TensorDataType ParseDtypeName(string name) =>
         name switch
         {
             "float16" or "half" => TensorDataType.Float16,

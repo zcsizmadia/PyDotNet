@@ -26,6 +26,18 @@ namespace PyDotNet.NumPy;
 /// This type is not thread-safe. Do not share a single <see cref="NdArray"/> across threads
 /// without external synchronization.
 /// </para>
+/// <para>
+/// <b>Python API coverage:</b> ~30 <c>ndarray</c> methods and ~25 top-level <c>numpy</c> functions
+/// are wrapped across <see cref="NdArray"/> and <see cref="NumpyModule"/> (~55 wrappers total).
+/// The wrapped surface covers shape metadata, zero-copy span/DLPack access, reshape/transpose/flatten/squeeze,
+/// reductions (<c>sum</c>, <c>mean</c>, <c>std</c>, <c>min</c>, <c>max</c>) with async overloads,
+/// element-wise math (<c>abs</c>, <c>sqrt</c>, <c>square</c>, <c>exp</c>, <c>log</c>),
+/// binary ops and C#-operator overloads, <c>dot</c>/<c>matmul</c>,
+/// array building (<c>zeros</c>, <c>ones</c>, <c>arange</c>, <c>linspace</c>, <c>eye</c>, <c>full</c>),
+/// zero-copy import from <c>Memory&lt;T&gt;</c>/<c>Span&lt;T&gt;</c>, and <c>stack</c>/<c>concatenate</c>/<c>expand_dims</c>.
+/// Notable gaps include: <c>sort</c>/<c>argsort</c>, <c>where</c>, <c>broadcast_to</c>, <c>pad</c>,
+/// <c>linalg.*</c>, <c>fft.*</c>, advanced indexing, and most of <c>numpy.random.*</c>.
+/// </para>
 /// </remarks>
 public sealed class NdArray : IDisposable
 {

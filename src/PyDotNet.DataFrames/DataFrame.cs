@@ -16,6 +16,15 @@ namespace PyDotNet.DataFrames;
 /// Any <see cref="Series"/> or <see cref="ArrowBatchReader"/> obtained from this
 /// instance remains valid until it too is disposed.
 /// </para>
+/// <para>
+/// <b>Python API coverage:</b> ~20 operations are wrapped across <c>PandasModule</c>, <c>PolarsModule</c>,
+/// <c>DataFrame</c>, <c>Series</c>, and <c>RecordBatch</c>.
+/// The wrapped surface covers construction from .NET dictionaries, reading CSV/Parquet/JSON,
+/// column listing, row count, column indexing, <c>Select</c> (column projection),
+/// zero-copy Apache Arrow batch export, and typed element extraction from <c>Series</c>.
+/// Notable gaps include: filter/query, groupby/aggregate, merge/join, sort, apply/map,
+/// describe/info, to_csv/to_parquet, and pivot operations.
+/// </para>
 /// </remarks>
 public sealed class DataFrame : IDisposable
 {

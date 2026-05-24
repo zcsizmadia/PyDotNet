@@ -186,6 +186,26 @@ internal static partial class NativeMethods
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern IntPtr PyBool_FromLong(long v);
 
+    // ── Numeric operators ─────────────────────────────────────────────────
+
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr PyNumber_Add(IntPtr o1, IntPtr o2);
+
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr PyNumber_Subtract(IntPtr o1, IntPtr o2);
+
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr PyNumber_Multiply(IntPtr o1, IntPtr o2);
+
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr PyNumber_TrueDivide(IntPtr o1, IntPtr o2);
+
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr PyNumber_MatrixMultiply(IntPtr o1, IntPtr o2);
+
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr PyNumber_Negative(IntPtr o1);
+
     // ── Bytes ──────────────────────────────────────────────────────────────
 
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]

@@ -46,7 +46,9 @@ internal static class PythonRuntimeHooks
             catch (PyRuntimeException)
             {
                 // Python found but init failed — tests will skip via SkipIfUnavailableAsync.
+                return;
             }
+
         });
     }
 
