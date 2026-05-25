@@ -105,8 +105,8 @@ try
 
         def _rs_feed(batch):   _rs.update_batch(batch)
         def _rs_report():
-            return (f'Processed {_rs.n} readings — '
-                    f'mean = {_rs.mean:.4f} \u00b0C, '
+            return (f'Processed {_rs.n} readings - '
+                    f'mean = {_rs.mean:.4f} C, '
                     f'stdev = {_rs.stdev:.4f}')
         """);
 

@@ -158,6 +158,10 @@ All methods return a **new** `PyTorchTensor` (owned reference, `IDisposable`) un
 | `Squeeze()` | `squeeze()` | Remove all size-1 dimensions. |
 | `Squeeze(int)` | `squeeze(dim)` | Remove specified size-1 dimension. |
 | `Unsqueeze(int)` | `unsqueeze(dim)` | Insert a size-1 dimension. |
+| `Permute(params int[] dims)` | `permute(dims)` | Permute tensor dimensions in the specified order. |
+| `Flatten()` | `flatten()` | Flatten to a 1-D tensor. |
+| `Clone()` | `clone()` | Deep copy with its own storage. |
+| `Contiguous()` | `contiguous()` | Return a C-contiguous tensor (copies if needed). |
 
 #### Reductions
 
@@ -167,6 +171,15 @@ All methods return a **new** `PyTorchTensor` (owned reference, `IDisposable`) un
 | `Mean(int dim)` | `mean(dim)` | Mean along one dimension. |
 | `Sum()` | `sum()` | Sum of all elements. |
 | `Sum(int dim)` | `sum(dim)` | Sum along one dimension. |
+| `Min()` | `min()` | Minimum of all elements (0-D tensor). |
+| `Min(int dim)` | `min(dim)` | Min along one dimension; returns a named-tuple tensor `(values, indices)`. |
+| `Max()` | `max()` | Maximum of all elements (0-D tensor). |
+| `Max(int dim)` | `max(dim)` | Max along one dimension; returns a named-tuple tensor `(values, indices)`. |
+| `ArgMin(int dim)` | `argmin(dim)` | Index of minimum along one dimension (0-D tensor). |
+| `ArgMax(int dim)` | `argmax(dim)` | Index of maximum along one dimension (0-D tensor). |
+| `Var()` | `var()` | Variance of all elements (Bessel-corrected, ddof=1). |
+| `Std()` | `std()` | Standard deviation of all elements. |
+| `Norm(float p = 2f)` | `norm(p)` | Lp norm of all elements. |
 
 #### Element-wise math
 
@@ -175,7 +188,11 @@ All methods return a **new** `PyTorchTensor` (owned reference, `IDisposable`) un
 | `Abs()` | `abs()` |
 | `Exp()` | `exp()` |
 | `Log()` | `log()` |
+| `Log2()` | `log2()` |
+| `Log10()` | `log10()` |
 | `Sqrt()` | `sqrt()` |
+| `Pow(double exponent)` | `pow(exp)` |
+| `Clamp(double min, double max)` | `clamp(min, max)` |
 
 #### Activations
 
@@ -190,7 +207,7 @@ All methods return a **new** `PyTorchTensor` (owned reference, `IDisposable`) un
 
 | Member | Description |
 |--------|-------------|
-| `Item<T>()` | Scalar value of a 0-D tensor. |
+| `Item<T>()` | Extracts the scalar value from a 0-D tensor. Use after `Min()`, `Max()`, `Var()`, `Std()`, `Norm()`, `ArgMin()`, `ArgMax()`. |
 | `ToArray<T>()` | Copies all elements to a managed array. |
 | `ToDLPack()` | Zero-copy `DLPackTensor` (CPU, no grad). |
 | `AsTensorBuffer(bool writable)` | Zero-copy `PyBuffer` via `detach().numpy()` (CPU only). |
@@ -204,6 +221,11 @@ All factory methods are `static` and return a new owned tensor.
 | `Zeros(interp, shape, dtype, requiresGrad)` | `torch.zeros(...)` | Tensor of zeros. |
 | `Ones(interp, shape, dtype, requiresGrad)` | `torch.ones(...)` | Tensor of ones. |
 | `Empty(interp, shape, dtype, requiresGrad)` | `torch.empty(...)` | Uninitialized tensor. |
+| `Full(interp, shape, fillValue, dtype)` | `torch.full(...)` | Constant-filled tensor. |
+| `Arange(interp, start, end, step)` | `torch.arange(...)` | Range tensor with given step (`float`). |
+| `Linspace(interp, start, end, steps)` | `torch.linspace(...)` | Linearly spaced tensor with `steps` elements. |
+| `Cat(interp, tensors[], dim)` | `torch.cat(...)` | Concatenate tensors along an existing dimension. |
+| `Stack(interp, tensors[], dim)` | `torch.stack(...)` | Stack tensors along a new dimension. |
 | `FromArray<T>(interp, data, shape)` | `torch.from_dlpack(...)` | Zero-copy from .NET array via DLPack. |
 | `From(PyObject)` | — | Wraps an existing Python `torch.Tensor` object. |
 
@@ -229,9 +251,9 @@ All factory methods are `static` and return a new owned tensor.
 
 ## Python API coverage
 
-~35 of the ~700 methods on `torch.Tensor` are wrapped.
+~55 of the ~700 methods on `torch.Tensor` are wrapped.
 
-**Notable gaps:** `clone`, `contiguous`, `permute`, `cat`/`stack`, `max`/`min`, `norm`, `clamp`, index/slice access (`tensor[i, j]`), and all in-place (`_`-suffixed) variants.
+**Notable gaps:** index/slice access (`tensor[i, j]`), in-place (`_`-suffixed) variants, `topk`, `gather`, `scatter`, color bars, and sparse/complex tensor operations.
 
 ## Supported frameworks
 

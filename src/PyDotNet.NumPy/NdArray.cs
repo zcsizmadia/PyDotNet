@@ -27,16 +27,19 @@ namespace PyDotNet.NumPy;
 /// without external synchronization.
 /// </para>
 /// <para>
-/// <b>Python API coverage:</b> ~30 <c>ndarray</c> methods and ~25 top-level <c>numpy</c> functions
-/// are wrapped across <see cref="NdArray"/> and <see cref="NumpyModule"/> (~55 wrappers total).
+/// <b>Python API coverage:</b> ~45 <c>ndarray</c> methods and ~40 top-level <c>numpy</c> functions
+/// are wrapped across <see cref="NdArray"/> and <see cref="NumpyModule"/> (~85 wrappers total).
 /// The wrapped surface covers shape metadata, zero-copy span/DLPack access, reshape/transpose/flatten/squeeze,
-/// reductions (<c>sum</c>, <c>mean</c>, <c>std</c>, <c>min</c>, <c>max</c>) with async overloads,
-/// element-wise math (<c>abs</c>, <c>sqrt</c>, <c>square</c>, <c>exp</c>, <c>log</c>),
-/// binary ops and C#-operator overloads, <c>dot</c>/<c>matmul</c>,
+/// reductions (<c>sum</c>, <c>mean</c>, <c>std</c>, <c>var</c>, <c>min</c>, <c>max</c>) with axis and async overloads,
+/// indexing helpers (<c>argmin</c>, <c>argmax</c>, <c>argsort</c>), sorting (<c>sort</c>/<c>sorted</c>),
+/// cumulative ops (<c>cumsum</c>, <c>cumprod</c>), element-wise math (<c>abs</c>, <c>sqrt</c>, <c>square</c>,
+/// <c>exp</c>, <c>log</c>, <c>log2</c>, <c>log10</c>, <c>power</c>), conditional selection (<c>where</c>),
+/// rounding and filling, binary ops and C#-operator overloads, <c>dot</c>/<c>matmul</c>,
 /// array building (<c>zeros</c>, <c>ones</c>, <c>arange</c>, <c>linspace</c>, <c>eye</c>, <c>full</c>),
-/// zero-copy import from <c>Memory&lt;T&gt;</c>/<c>Span&lt;T&gt;</c>, and <c>stack</c>/<c>concatenate</c>/<c>expand_dims</c>.
-/// Notable gaps include: <c>sort</c>/<c>argsort</c>, <c>where</c>, <c>broadcast_to</c>, <c>pad</c>,
-/// <c>linalg.*</c>, <c>fft.*</c>, advanced indexing, and most of <c>numpy.random.*</c>.
+/// zero-copy import from <c>Memory&lt;T&gt;</c>/<c>Span&lt;T&gt;</c>, structural ops
+/// (<c>stack</c>/<c>concatenate</c>/<c>expand_dims</c>/<c>broadcast_to</c>/<c>tile</c>/<c>pad</c>),
+/// and set-like ops (<c>unique</c>).
+/// Notable gaps include: <c>linalg.*</c>, <c>fft.*</c>, and advanced indexing.
 /// </para>
 /// </remarks>
 public sealed class NdArray : IDisposable
@@ -288,6 +291,113 @@ public sealed class NdArray : IDisposable
         var kwargs = new Dictionary<string, object?> { ["axis"] = (long)axis };
         using var fn = _obj.GetAttr("mean");
         return new NdArray(fn.Call(Array.Empty<object?>(), kwargs));
+    }
+
+    /// <summary>Returns the variance of all elements.</summary>
+    public double Var()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var fn = _obj.GetAttr("var");
+        using var result = fn.Call();
+        return result.As<double>();
+    }
+
+    /// <summary>Returns the variance along the given <paramref name="axis"/>.</summary>
+    public NdArray VarAxis(int axis)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var kwargs = new Dictionary<string, object?> { ["axis"] = (long)axis };
+        using var fn = _obj.GetAttr("var");
+        return new NdArray(fn.Call(Array.Empty<object?>(), kwargs));
+    }
+
+    /// <summary>Returns the standard deviation along the given <paramref name="axis"/>.</summary>
+    public NdArray StdAxis(int axis)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var kwargs = new Dictionary<string, object?> { ["axis"] = (long)axis };
+        using var fn = _obj.GetAttr("std");
+        return new NdArray(fn.Call(Array.Empty<object?>(), kwargs));
+    }
+
+    /// <summary>Returns the flat index of the minimum element.</summary>
+    public long ArgMin()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var fn = _obj.GetAttr("argmin");
+        using var result = fn.Call();
+        return result.As<long>();
+    }
+
+    /// <summary>Returns the flat index of the maximum element.</summary>
+    public long ArgMax()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var fn = _obj.GetAttr("argmax");
+        using var result = fn.Call();
+        return result.As<long>();
+    }
+
+    /// <summary>Returns the indices that would sort the array along the last axis.</summary>
+    public NdArray ArgSort()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var fn = _obj.GetAttr("argsort");
+        return new NdArray(fn.Call());
+    }
+
+    /// <summary>Returns a sorted copy of the array (ascending, last axis).</summary>
+    public NdArray Sorted()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var copy = Copy(); // copy owns reference; no 'using' — we'll return it
+        using var fn = copy._obj.GetAttr("sort");
+        using var _ = fn.Call(); // in-place sort on the copy; returns None
+        return copy;
+    }
+
+    /// <summary>
+    /// Returns the cumulative sum of the elements along the flattened array.
+    /// Equivalent to <c>ndarray.cumsum()</c>.
+    /// </summary>
+    public NdArray Cumsum()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var fn = _obj.GetAttr("cumsum");
+        return new NdArray(fn.Call());
+    }
+
+    /// <summary>
+    /// Returns the cumulative product of the elements along the flattened array.
+    /// Equivalent to <c>ndarray.cumprod()</c>.
+    /// </summary>
+    public NdArray Cumprod()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var fn = _obj.GetAttr("cumprod");
+        return new NdArray(fn.Call());
+    }
+
+    /// <summary>
+    /// Returns an array with each element rounded to <paramref name="decimals"/> decimal places.
+    /// Equivalent to <c>ndarray.round(decimals)</c>.
+    /// </summary>
+    public NdArray Round(int decimals = 0)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var fn = _obj.GetAttr("round");
+        return new NdArray(fn.Call((long)decimals));
+    }
+
+    /// <summary>
+    /// Fills the array in-place with <paramref name="value"/>.
+    /// Equivalent to <c>ndarray.fill(value)</c>.
+    /// </summary>
+    public void Fill(double value)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var fn = _obj.GetAttr("fill");
+        using var _ = fn.Call(value);
     }
 
     // ── Async reducers ────────────────────────────────────────────────────

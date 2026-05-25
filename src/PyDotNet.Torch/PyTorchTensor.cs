@@ -15,18 +15,19 @@ namespace PyDotNet.Torch;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Python API coverage:</b> ~35 of the ~700 methods on <c>torch.Tensor</c> are wrapped.
+/// <b>Python API coverage:</b> ~55 of the ~700 methods on <c>torch.Tensor</c> are wrapped.
 /// The wrapped surface covers autograd (<c>requires_grad</c>, <c>grad</c>, <c>backward</c>, <c>detach</c>),
 /// device movement (<c>to</c>, <c>cpu</c>, <c>cuda</c>),
 /// arithmetic (<c>+</c>, <c>-</c>, <c>*</c>, <c>/</c>, <c>@</c>, unary <c>-</c>),
-/// shape manipulation (<c>reshape</c>, <c>view</c>, <c>transpose</c>, <c>.T</c>, <c>squeeze</c>, <c>unsqueeze</c>),
-/// reductions (<c>mean</c>, <c>sum</c>),
-/// element-wise math (<c>abs</c>, <c>exp</c>, <c>log</c>, <c>sqrt</c>),
+/// shape manipulation (<c>reshape</c>, <c>view</c>, <c>transpose</c>, <c>.T</c>, <c>squeeze</c>, <c>unsqueeze</c>,
+/// <c>permute</c>, <c>flatten</c>, <c>clone</c>, <c>contiguous</c>),
+/// reductions (<c>mean</c>, <c>sum</c>, <c>min</c>, <c>max</c>, <c>argmin</c>, <c>argmax</c>, <c>var</c>, <c>std</c>, <c>norm</c>),
+/// element-wise math (<c>abs</c>, <c>exp</c>, <c>log</c>, <c>log2</c>, <c>log10</c>, <c>sqrt</c>, <c>pow</c>, <c>clamp</c>),
 /// activations (<c>relu</c>, <c>sigmoid</c>, <c>tanh</c>, <c>softmax</c>),
 /// data access (<c>item</c>, DLPack, buffer protocol),
-/// and factory functions (<c>torch.zeros</c>, <c>torch.ones</c>, <c>torch.empty</c>, <c>torch.from_dlpack</c>).
-/// Notable gaps include: <c>clone</c>, <c>contiguous</c>, <c>permute</c>, <c>cat</c>/<c>stack</c>,
-/// <c>max</c>/<c>min</c>, <c>norm</c>, <c>clamp</c>, index/slice access, and all in-place (<c>_</c>-suffixed) variants.
+/// and factory functions (<c>torch.zeros</c>, <c>torch.ones</c>, <c>torch.empty</c>, <c>torch.full</c>,
+/// <c>torch.arange</c>, <c>torch.linspace</c>, <c>torch.cat</c>, <c>torch.stack</c>, <c>torch.from_dlpack</c>).
+/// Notable gaps: index/slice access and all in-place (<c>_</c>-suffixed) variants.
 /// </para>
 /// </remarks>
 public sealed class PyTorchTensor : PyTensor
@@ -310,6 +311,73 @@ public sealed class PyTorchTensor : PyTensor
     /// <summary>Softmax along the given dimension.</summary>
     public PyTorchTensor Softmax(int dim) => CallTensorMethod("softmax", dim);
 
+    // ── Reductions (extended) ─────────────────────────────────────────────
+
+    /// <summary>Returns the minimum value of all elements as a scalar tensor.</summary>
+    public PyTorchTensor Min() => CallTensorMethod("min");
+
+    /// <summary>Returns the minimum values along the given dimension.</summary>
+    public PyTorchTensor Min(int dim) => CallTensorMethod("min", dim);
+
+    /// <summary>Returns the maximum value of all elements as a scalar tensor.</summary>
+    public PyTorchTensor Max() => CallTensorMethod("max");
+
+    /// <summary>Returns the maximum values along the given dimension.</summary>
+    public PyTorchTensor Max(int dim) => CallTensorMethod("max", dim);
+
+    /// <summary>Returns the index of the minimum value along the given dimension.</summary>
+    public PyTorchTensor ArgMin(int dim) => CallTensorMethod("argmin", dim);
+
+    /// <summary>Returns the index of the maximum value along the given dimension.</summary>
+    public PyTorchTensor ArgMax(int dim) => CallTensorMethod("argmax", dim);
+
+    /// <summary>Returns the variance of all elements.</summary>
+    public PyTorchTensor Var() => CallTensorMethod("var");
+
+    /// <summary>Returns the standard deviation of all elements.</summary>
+    public PyTorchTensor Std() => CallTensorMethod("std");
+
+    /// <summary>Returns the <paramref name="p"/>-norm of the flattened tensor (default L2).</summary>
+    public PyTorchTensor Norm(float p = 2.0f) => CallTensorMethod("norm", p);
+
+    // ── Shape manipulation (extended) ─────────────────────────────────────
+
+    /// <summary>Returns a deep copy of this tensor with separate storage.</summary>
+    public PyTorchTensor Clone() => CallTensorMethod("clone");
+
+    /// <summary>
+    /// Returns a contiguous tensor in memory with the same data.
+    /// No-op when the tensor is already contiguous.
+    /// </summary>
+    public PyTorchTensor Contiguous() => CallTensorMethod("contiguous");
+
+    /// <summary>
+    /// Returns a view with the dimensions permuted in the specified order.
+    /// </summary>
+    /// <param name="dims">New ordering of dimensions, e.g. <c>0, 2, 1</c> for a 3-D tensor.</param>
+    public PyTorchTensor Permute(params int[] dims)
+    {
+        ArgumentNullException.ThrowIfNull(dims);
+        return CallTensorMethod("permute", dims.Select(static d => (object?)d).ToArray());
+    }
+
+    /// <summary>Flattens the tensor into a 1-D tensor.</summary>
+    public PyTorchTensor Flatten() => CallTensorMethod("flatten");
+
+    // ── Element-wise math (extended) ──────────────────────────────────────
+
+    /// <summary>Clamps all elements into the range [<paramref name="min"/>, <paramref name="max"/>].</summary>
+    public PyTorchTensor Clamp(double min, double max) => CallTensorMethod("clamp", min, max);
+
+    /// <summary>Raises each element to <paramref name="exponent"/>.</summary>
+    public PyTorchTensor Pow(double exponent) => CallTensorMethod("pow", exponent);
+
+    /// <summary>Base-2 logarithm element-wise.</summary>
+    public PyTorchTensor Log2() => CallTensorMethod("log2");
+
+    /// <summary>Base-10 logarithm element-wise.</summary>
+    public PyTorchTensor Log10() => CallTensorMethod("log10");
+
     // ── Data access ───────────────────────────────────────────────────────
 
     /// <summary>
@@ -514,6 +582,92 @@ public sealed class PyTorchTensor : PyTensor
     }
 
     /// <summary>
+    /// Creates a 1-D tensor with evenly spaced values in the half-open interval
+    /// [<paramref name="start"/>, <paramref name="end"/>).
+    /// </summary>
+    public static PyTorchTensor Arange(PyInterpreter interp, float start, float end, float step = 1.0f)
+    {
+        ArgumentNullException.ThrowIfNull(interp);
+        using var torchMod = interp.ImportModule("torch");
+        using var result = torchMod.Call("arange", start, end, step);
+        return From(result);
+    }
+
+    /// <summary>
+    /// Creates a 1-D tensor with <paramref name="steps"/> evenly spaced values between
+    /// <paramref name="start"/> and <paramref name="end"/> (inclusive).
+    /// </summary>
+    public static PyTorchTensor Linspace(PyInterpreter interp, float start, float end, int steps)
+    {
+        ArgumentNullException.ThrowIfNull(interp);
+        using var torchMod = interp.ImportModule("torch");
+        using var result = torchMod.Call("linspace", start, end, steps);
+        return From(result);
+    }
+
+    /// <summary>
+    /// Creates a tensor with the given <paramref name="shape"/> filled with <paramref name="fillValue"/>.
+    /// </summary>
+    public static PyTorchTensor Full(
+        PyInterpreter interp,
+        int[] shape,
+        float fillValue,
+        TensorDataType dtype = TensorDataType.Float32)
+    {
+        ArgumentNullException.ThrowIfNull(interp);
+        ArgumentNullException.ThrowIfNull(shape);
+        using var torchMod = interp.ImportModule("torch");
+        using var dtypeObj = torchMod.GetAttr(TensorDataTypeToTorchString(dtype));
+        var kwargs = new Dictionary<string, object?> { ["dtype"] = dtypeObj };
+        using var result = torchMod.Call("full", [(object?)shape, (object?)(double)fillValue], kwargs);
+        return From(result);
+    }
+
+    /// <summary>
+    /// Concatenates <paramref name="tensors"/> along the given dimension.
+    /// All tensors must have identical shapes except along <paramref name="dim"/>.
+    /// </summary>
+    public static PyTorchTensor Cat(PyInterpreter interp, PyTorchTensor[] tensors, int dim = 0)
+    {
+        ArgumentNullException.ThrowIfNull(interp);
+        ArgumentNullException.ThrowIfNull(tensors);
+
+        using var gil = new GilScope();
+        var torchMod = NativeMethods.PyImport_ImportModule("torch");
+        if (torchMod == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+        try
+        {
+            return TensorListOp(torchMod, "cat", tensors, dim);
+        }
+        finally
+        {
+            NativeMethods.Py_DecRef(torchMod);
+        }
+    }
+
+    /// <summary>
+    /// Stacks <paramref name="tensors"/> along a new dimension inserted at <paramref name="dim"/>.
+    /// All tensors must have the same shape.
+    /// </summary>
+    public static PyTorchTensor Stack(PyInterpreter interp, PyTorchTensor[] tensors, int dim = 0)
+    {
+        ArgumentNullException.ThrowIfNull(interp);
+        ArgumentNullException.ThrowIfNull(tensors);
+
+        using var gil = new GilScope();
+        var torchMod = NativeMethods.PyImport_ImportModule("torch");
+        if (torchMod == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+        try
+        {
+            return TensorListOp(torchMod, "stack", tensors, dim);
+        }
+        finally
+        {
+            NativeMethods.Py_DecRef(torchMod);
+        }
+    }
+
+    /// <summary>
     /// Creates a tensor from a .NET array using the zero-copy DLPack protocol.
     /// The <paramref name="data"/> array is pinned for the lifetime of the
     /// returned tensor; do not dispose the tensor while the array is still
@@ -686,6 +840,52 @@ public sealed class PyTorchTensor : PyTensor
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
+
+    // Calls torch.cat or torch.stack with a Python list of tensors and a dim kwarg.
+    // Caller must hold the GIL and own torchMod.
+    private static PyTorchTensor TensorListOp(IntPtr torchMod, string funcName, PyTorchTensor[] tensors, int dim)
+    {
+        var func = NativeMethods.PyObject_GetAttrString(torchMod, funcName);
+        if (func == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+
+        try
+        {
+            var pyList = NativeMethods.PyList_New(tensors.Length);
+            for (int i = 0; i < tensors.Length; i++)
+            {
+                NativeMethods.Py_IncRef(tensors[i].Handle);
+                _ = NativeMethods.PyList_SetItem(pyList, i, tensors[i].Handle); // steals ref
+            }
+
+            // args = (tensor_list,)
+            var argTuple = NativeMethods.PyTuple_New(1);
+            _ = NativeMethods.PyTuple_SetItem(argTuple, 0, pyList); // steals pyList
+
+            // kwargs = {"dim": dim}
+            var pyDim = NativeMethods.PyLong_FromLong(dim);
+            var kw = NativeMethods.PyDict_New();
+            _ = NativeMethods.PyDict_SetItemString(kw, "dim", pyDim);
+            NativeMethods.Py_DecRef(pyDim);
+
+            IntPtr result;
+            try
+            {
+                result = NativeMethods.PyObject_Call(func, argTuple, kw);
+            }
+            finally
+            {
+                NativeMethods.Py_DecRef(argTuple);
+                NativeMethods.Py_DecRef(kw);
+            }
+
+            if (result == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+            return NewTensor(result);
+        }
+        finally
+        {
+            NativeMethods.Py_DecRef(func);
+        }
+    }
 
     private PyTorchTensor BinaryOp(
         Func<IntPtr, IntPtr, IntPtr> op,
