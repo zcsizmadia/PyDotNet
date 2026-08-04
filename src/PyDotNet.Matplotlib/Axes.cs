@@ -204,7 +204,7 @@ public sealed class Axes : IDisposable
         ArgumentNullException.ThrowIfNull(labels);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        var kwargs = new Dictionary<string, object?> { ["labels"] = labels };
+        var kwargs = new Dictionary<string, object?> { ["tick_labels"] = labels };
         CallAxesMethod("boxplot", [(object?)data], kwargs);
     }
 
