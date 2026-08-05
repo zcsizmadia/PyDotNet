@@ -1,3 +1,4 @@
+using PyDotNet.Async;
 using PyDotNet.Native;
 using PyDotNet.Runtime;
 using PyDotNet.Tests.Infrastructure;
@@ -61,5 +62,21 @@ public sealed class GilAndRuntimeTests
         using var interp = PyRuntime.CreateInterpreter();
         using var result = interp.Evaluate("1 + 1");
         await Assert.That(result.As<int>()).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task Initialize_WarmsAsyncioBeforeConcurrentUse()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        await Assert.That(AsyncBridge.IsAsyncioCached).IsTrue();
+
+        var tasks = Enumerable.Range(0, 16).Select(_ => Task.Run(() =>
+        {
+            using var interp = PyRuntime.CreateInterpreter();
+            interp.Execute("import asyncio; import dataclasses; import typing");
+        }));
+
+        await Task.WhenAll(tasks);
     }
 }

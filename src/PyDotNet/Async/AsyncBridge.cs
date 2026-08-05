@@ -17,6 +17,24 @@ internal static class AsyncBridge
     private static volatile IntPtr _asyncioModule;
 
     /// <summary>
+    /// Imports and caches <c>asyncio</c> while runtime initialization still owns the
+    /// startup GIL.  Performing this import before worker threads are admitted avoids
+    /// exposing partially initialized transitive modules during concurrent first use.
+    /// GIL must already be held by the caller.
+    /// </summary>
+    internal static void WarmUp()
+    {
+        var module = GetAsyncioModule();
+        if (module == IntPtr.Zero)
+        {
+            PythonException.ThrowIfPythonErrorOccurred();
+            throw new PyInteropException("Failed to initialize the Python 'asyncio' module.");
+        }
+
+        NativeMethods.Py_DecRef(module);
+    }
+
+    /// <summary>
     /// Returns a new reference to the cached <c>asyncio</c> module, importing it on first use.
     /// Caller must <c>Py_DecRef</c> the returned handle. GIL must already be held.
     /// </summary>
@@ -40,11 +58,20 @@ internal static class AsyncBridge
     }
 
     /// <summary>
-    /// Zeros the cached asyncio module handle. Called during
-    /// <see cref="Runtime.PyRuntime.Shutdown()"/> after the GIL has been released.
-    /// No <c>Py_DecRef</c> is performed; the runtime is already shutting down.
+    /// Releases and clears the cached asyncio module handle during managed runtime
+    /// shutdown. GIL must already be held by the caller.
     /// </summary>
-    internal static void ResetAsyncioCache() => _asyncioModule = IntPtr.Zero;
+    internal static void ReleaseAsyncioCache()
+    {
+        var module = _asyncioModule;
+        _asyncioModule = IntPtr.Zero;
+        if (module != IntPtr.Zero)
+        {
+            NativeMethods.Py_DecRef(module);
+        }
+    }
+
+    internal static bool IsAsyncioCached => _asyncioModule != IntPtr.Zero;
 
     // ── Public entry points ────────────────────────────────────────────────
 
