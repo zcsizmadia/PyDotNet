@@ -29,8 +29,4 @@
     <!-- regardless of how deeply nested the project file is.                       -->
     <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
-
-  <ItemGroup Condition="$([System.String]::Copy('$(MSBuildProjectName)').EndsWith('.Tests'))">
-    <PackageReference Include="coverlet.MTP" PrivateAssets="all" />
-  </ItemGroup>
 </Project>
