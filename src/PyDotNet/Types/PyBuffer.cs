@@ -15,7 +15,7 @@ namespace PyDotNet.Types;
 public sealed unsafe class PyBuffer : IDisposable
 {
     private readonly PyBufferStruct* _view;
-    private bool _released;
+    private int _released;
     private readonly PyObject _owner;
 
     private PyBuffer(PyObject owner, PyBufferStruct* view)
@@ -227,12 +227,11 @@ public sealed unsafe class PyBuffer : IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
-        if (_released)
+        if (Interlocked.Exchange(ref _released, 1) != 0)
         {
             return;
         }
 
-        _released = true;
         using var gil = new GilScope();
         NativeMethods.PyBuffer_Release(_view);
         NativeMemory.Free(_view);
@@ -265,7 +264,7 @@ public sealed unsafe class PyBuffer : IDisposable
 
     private void EnsureNotReleased()
     {
-        ObjectDisposedException.ThrowIf(_released, this);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _released) != 0, this);
     }
 
     // ── NativeMemoryManager ───────────────────────────────────────────────

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>$(DefaultTargetFrameworks)</TargetFrameworks>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>PyDotNet.Lifecycle.Tests</RootNamespace>
+    <AssemblyName>PyDotNet.Lifecycle.Tests</AssemblyName>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <NoWarn>$(NoWarn);CS1591;CA1707;TUnitAssertions0005</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="TUnit" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/PyDotNet/PyDotNet.csproj" />
+  </ItemGroup>
+</Project>

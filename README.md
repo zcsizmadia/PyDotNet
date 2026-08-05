@@ -200,10 +200,25 @@ PyRuntime.Initialize(new PyRuntimeOptions
 });
 
 Console.WriteLine(PyRuntime.IsInitialized); // true
+Console.WriteLine(PyRuntime.State);         // Running
 Console.WriteLine(PyRuntime.IsGilEnabled);  // false on free-threaded 3.13+ builds
 
-PyRuntime.Shutdown(); // releases the native library handle; Initialize() can be called again
+PyRuntime.Shutdown(); // releases tracked wrappers; CPython remains loaded process-wide
 ```
+
+`Shutdown` stops managed work, drains deferred reference releases, invalidates tracked
+`PyObject` wrappers, and resets managed caches. It deliberately does not call
+`Py_Finalize` or unload `libpython`: CPython extensions retain process-global state and
+native pointers that make unload-and-reload unsafe. A later `Initialize` reactivates the
+existing process-wide CPython runtime.
+
+Do not use an interpreter or Python wrapper concurrently with `Shutdown`. After shutdown,
+existing tracked wrappers throw `ObjectDisposedException`; create new interpreters and
+wrappers after reactivation. Applications requiring hard cancellation, a fresh Python
+runtime, or recovery from a native extension crash should isolate Python in a worker process.
+
+`PyRuntime.State` exposes `Uninitialized`, `Initializing`, `Running`, `Stopping`, `Stopped`,
+or `Faulted`. New work is accepted only in the `Running` state.
 
 `Initialize` is **idempotent** — it is safe to call from multiple threads or multiple times with the same configuration. `Shutdown` is also idempotent.
 

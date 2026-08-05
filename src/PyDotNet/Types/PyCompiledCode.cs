@@ -234,7 +234,8 @@ public sealed class PyCompiledCode : IDisposable
     /// <inheritdoc/>
     public void Dispose()
     {
-        if (_disposed)
+        var codeObj = Interlocked.Exchange(ref _codeObj, IntPtr.Zero);
+        if (codeObj == IntPtr.Zero)
         {
             return;
         }
@@ -242,8 +243,7 @@ public sealed class PyCompiledCode : IDisposable
         _disposed = true;
 
         using var gil = new GilScope();
-        NativeMethods.Py_DecRef(_codeObj);
-        _codeObj = IntPtr.Zero;
+        NativeMethods.Py_DecRef(codeObj);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────

@@ -84,4 +84,18 @@ public sealed class PyDecRefQueueTests
 
         await Assert.That(true).IsTrue();
     }
+
+    [Test]
+    public async Task Dispose_ConcurrentCalls_ReleasesHandleOnce()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        var value = interp.Evaluate("object()");
+
+        Parallel.For(0, 64, _ => value.Dispose());
+
+        await Assert.That(() => value.As<object>())
+            .Throws<ObjectDisposedException>();
+    }
 }

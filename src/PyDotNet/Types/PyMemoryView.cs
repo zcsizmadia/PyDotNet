@@ -42,7 +42,7 @@ public sealed unsafe class PyMemoryView<T> : IDisposable
     private readonly byte* _block;
     private MemoryHandle _pin;
     private readonly PyObject _pyObject;
-    private bool _disposed;
+    private int _disposed;
 
     private PyMemoryView(byte* block, MemoryHandle pin, PyObject pyObject)
     {
@@ -56,7 +56,7 @@ public sealed unsafe class PyMemoryView<T> : IDisposable
     {
         get
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
             return _pyObject;
         }
     }
@@ -240,12 +240,11 @@ public sealed unsafe class PyMemoryView<T> : IDisposable
     /// </summary>
     public void Dispose()
     {
-        if (_disposed)
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
             return;
         }
 
-        _disposed = true;
         _pyObject.Dispose();
         NativeMemory.Free(_block);
         _pin.Dispose();

@@ -20,7 +20,7 @@ public delegate void Utf8SpanAction(ReadOnlySpan<byte> utf8);
 public class PyObject : IDisposable
 {
     private IntPtr _handle;
-    private bool _disposed;
+    private volatile bool _disposed;
     private readonly long _registryId;
 
     internal PyObject(IntPtr handle)
@@ -40,8 +40,9 @@ public class PyObject : IDisposable
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            return _handle;
+            var handle = Volatile.Read(ref _handle);
+            ObjectDisposedException.ThrowIf(handle == IntPtr.Zero, this);
+            return handle;
         }
     }
 
@@ -566,7 +567,8 @@ public class PyObject : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected virtual void Dispose(bool disposing)
     {
-        if (_disposed)
+        var handle = Interlocked.Exchange(ref _handle, IntPtr.Zero);
+        if (handle == IntPtr.Zero)
         {
             return;
         }
@@ -574,35 +576,29 @@ public class PyObject : IDisposable
         _disposed = true;
         PyObjectRegistry.Remove(_registryId);
 
-        if (_handle == IntPtr.Zero)
-        {
-            return;
-        }
-
         if (disposing)
         {
             // Explicit Dispose() — acquire the GIL and release immediately.
             using var gil = new GilScope();
-            NativeMethods.Py_DecRef(_handle);
+            NativeMethods.Py_DecRef(handle);
         }
         else
         {
             // Finalizer path — the GC thread never holds the GIL.
             // Enqueue for release on the dedicated PyDecRefQueue background thread.
-            PyDecRefQueue.Enqueue(_handle);
+            PyDecRefQueue.Enqueue(handle);
         }
-
-        _handle = IntPtr.Zero;
     }
 
     /// <summary>
     /// Forces immediate handle release without acquiring the GIL.
     /// Called by <see cref="PyObjectRegistry"/> while the GIL is already held, before
-    /// <c>Py_Finalize()</c> is invoked.
+    /// managed runtime shutdown releases tracked Python references.
     /// </summary>
     internal void ForceReleaseHandle()
     {
-        if (_disposed)
+        var handle = Interlocked.Exchange(ref _handle, IntPtr.Zero);
+        if (handle == IntPtr.Zero)
         {
             return;
         }
@@ -612,11 +608,7 @@ public class PyObject : IDisposable
         GC.SuppressFinalize(this);
 #pragma warning restore CA1816
 
-        if (_handle != IntPtr.Zero)
-        {
-            NativeMethods.Py_DecRef(_handle); // caller holds the GIL
-            _handle = IntPtr.Zero;
-        }
+        NativeMethods.Py_DecRef(handle); // caller holds the GIL
     }
 
     /// <summary>Finalizer that releases the Python reference if Dispose was not called.</summary>

@@ -19,14 +19,20 @@ namespace PyDotNet.Runtime;
 public static class PyRuntime
 {
     private static readonly object _lock = new();
-    private static volatile bool _initialized;
+    private static int _state = (int)PyRuntimeState.Uninitialized;
     private static IntPtr _mainThreadState;
     private static PyRuntimeOptions _options = new();
     private static ILogger _logger = NullLogger.Instance;
     private static IntPtr _nativeLibraryHandle;
+    private static string? _loadedLibraryPath;
+    /// <summary>Gets the current managed runtime lifecycle state.</summary>
+    public static PyRuntimeState State => (PyRuntimeState)Volatile.Read(ref _state);
 
-    /// <summary>Gets a value indicating whether the runtime has been initialized.</summary>
-    public static bool IsInitialized => _initialized;
+    /// <summary>Gets a value indicating whether the runtime is accepting Python work.</summary>
+    public static bool IsInitialized => State == PyRuntimeState.Running;
+
+    /// <summary>Gets whether CPython can still service process-lifetime cleanup calls.</summary>
+    internal static bool IsPythonAlive => Volatile.Read(ref _nativeLibraryHandle) != IntPtr.Zero;
 
     /// <summary>
     /// Gets a value indicating whether the Python GIL is enabled.
@@ -61,42 +67,58 @@ public static class PyRuntime
         ArgumentNullException.ThrowIfNull(options);
         options.Validate();
 
-        if (_initialized)
+        if (State == PyRuntimeState.Running)
         {
             return;
         }
 
         lock (_lock)
         {
-            if (_initialized)
+            if (State == PyRuntimeState.Running)
             {
                 return;
             }
 
+            if (State is PyRuntimeState.Initializing or PyRuntimeState.Stopping)
+            {
+                throw new PyRuntimeException($"Cannot initialize PyDotNet while the runtime is {State}.");
+            }
+
             _options = options;
-            InitializeCore(options);
-            _initialized = true;
+            Volatile.Write(ref _state, (int)PyRuntimeState.Initializing);
+            try
+            {
+                InitializeCore(options);
+                Volatile.Write(ref _state, (int)PyRuntimeState.Running);
+            }
+            catch
+            {
+                Volatile.Write(ref _state, (int)PyRuntimeState.Faulted);
+                throw;
+            }
         }
     }
 
     /// <summary>
-    /// Shuts down the Python runtime and releases all resources.
-    /// After this call, <see cref="Initialize()"/> can be called again.
+    /// Stops managed Python work and releases all tracked Python references.
+    /// CPython and its native library remain loaded for process safety.
+    /// After this call, <see cref="Initialize()"/> can reactivate PyDotNet.
     /// </summary>
     public static void Shutdown()
     {
-        if (!_initialized)
+        if (State != PyRuntimeState.Running)
         {
             return;
         }
 
         lock (_lock)
         {
-            if (!_initialized)
+            if (State != PyRuntimeState.Running)
             {
                 return;
             }
 
+            Volatile.Write(ref _state, (int)PyRuntimeState.Stopping);
             _logger.ShuttingDown();
 
             // Use PyGILState_Ensure rather than PyEval_RestoreThread so that
@@ -105,22 +127,20 @@ public static class PyRuntime
             // necessarily the thread that called Initialize() and saved
             // _mainThreadState.)
             var gilState = NativeMethods.PyGILState_Ensure();
-
-            // Drain any handles enqueued by object finalizers while the GIL is held.
-            // Must happen before ClearAll() to avoid double-free if a finalizer races
-            // with the registry sweep.
-            PyDecRefQueue.StopAndDrain();
-
-            // Release all live Python object handles while the GIL is held.
-            // ForceReleaseHandle() calls GC.SuppressFinalize on every object, so
-            // no .NET finalizers will later try to call Py_DecRef after we free
-            // the native library.
-            PyObjectRegistry.ClearAll();
-
-            NativeMethods.PyGILState_Release(gilState);
-            TypeConverter.ResetNoneCache();
-            AsyncBridge.ResetAsyncioCache();
-            _mainThreadState = IntPtr.Zero;
+            try
+            {
+                // Drain finalized handles before sweeping live wrappers. Atomic handle
+                // transfer ensures racing disposal cannot release a reference twice.
+                PyDecRefQueue.Drain();
+                PyObjectRegistry.ClearAll();
+            }
+            finally
+            {
+                NativeMethods.PyGILState_Release(gilState);
+                TypeConverter.ResetNoneCache();
+                AsyncBridge.ResetAsyncioCache();
+                _mainThreadState = IntPtr.Zero;
+            }
 
             // Py_Finalize() is intentionally skipped.
             //
@@ -133,14 +153,10 @@ public static class PyRuntime
             //
             // Shutdown() is called during test/process teardown, so OS-level
             // cleanup of the remaining Python runtime state is sufficient.
-            _initialized = false;
-
-            if (_nativeLibraryHandle != IntPtr.Zero)
-            {
-                NativeLibrary.Free(_nativeLibraryHandle);
-                _nativeLibraryHandle = IntPtr.Zero;
-            }
-
+            // CPython and libpython intentionally remain loaded for the process.
+            // Extension modules retain process-global state and executable pointers
+            // into libpython, so unloading without finalizing would be unsafe.
+            Volatile.Write(ref _state, (int)PyRuntimeState.Stopped);
             _logger.ShutDown();
         }
     }
@@ -159,10 +175,11 @@ public static class PyRuntime
 
     internal static void EnsureInitialized()
     {
-        if (!_initialized)
+        if (State != PyRuntimeState.Running)
         {
             throw new PyRuntimeException(
-                "PyDotNet runtime is not initialized. Call PyRuntime.Initialize() first.");
+                $"PyDotNet runtime is not running (current state: {State}). " +
+                "Call PyRuntime.Initialize() first.");
         }
     }
 
@@ -180,11 +197,24 @@ public static class PyRuntime
                 "Set the PYDOTNET_PYTHON_LIBRARY environment variable or supply " +
                 "PyRuntimeOptions.PythonLibraryPath explicitly.");
 
+        libraryPath = Path.GetFullPath(libraryPath);
+        if (_loadedLibraryPath is not null &&
+            !string.Equals(_loadedLibraryPath, libraryPath, PathComparison))
+        {
+            throw new PyRuntimeException(
+                $"CPython is already loaded from '{_loadedLibraryPath}' and cannot be replaced " +
+                $"with '{libraryPath}' in the same process.");
+        }
+
         _logger.LoadingPythonLibrary(libraryPath);
 
         // Register the DLL import resolver so that [DllImport("python")] is
         // redirected to the real versioned shared library.
-        _nativeLibraryHandle = NativeLibrary.Load(libraryPath);
+        if (_nativeLibraryHandle == IntPtr.Zero)
+        {
+            _nativeLibraryHandle = NativeLibrary.Load(libraryPath);
+            _loadedLibraryPath = libraryPath;
+        }
 
         // On Linux, NativeLibrary.Load uses RTLD_LOCAL which prevents Python's
         // symbols from being visible to subsequently dlopen'd shared libraries.
@@ -205,7 +235,8 @@ public static class PyRuntime
                 (name, _, _) => name == NativeMethods.PythonDll ? _nativeLibraryHandle : IntPtr.Zero);
         }
 
-        if (NativeMethods.Py_IsInitialized() == 0)
+        var initializedHere = NativeMethods.Py_IsInitialized() == 0;
+        if (initializedHere)
         {
             NativeMethods.Py_Initialize();
             _logger.PyInitializeCalled();
@@ -227,7 +258,7 @@ public static class PyRuntime
             : options.AdditionalSysPaths;
         AppendSysPaths(allAdditionalPaths);
 
-        if (options.ReleaseGilAfterInit)
+        if (initializedHere && options.ReleaseGilAfterInit)
         {
             // Release the GIL so .NET thread-pool threads can acquire it freely.
             _mainThreadState = NativeMethods.PyEval_SaveThread();
@@ -245,11 +276,23 @@ public static class PyRuntime
         using var gil = new GilScope();
 
         var sysPaths = NativeMethods.PySys_GetObject("path"); // borrowed ref
+        if (sysPaths == IntPtr.Zero)
+        {
+            PythonException.ThrowIfPythonErrorOccurred();
+            throw new PyRuntimeException("Python sys.path is unavailable.");
+        }
+
         foreach (var path in paths)
         {
-            var pyPath = NativeMethods.PyUnicode_FromString(path);
-            _ = NativeMethods.PyList_Append(sysPaths, pyPath);
-            NativeMethods.Py_DecRef(pyPath);
+            var pyPath = PyApi.NewReference(NativeMethods.PyUnicode_FromString(path), "PyUnicode_FromString");
+            try
+            {
+                PyApi.Status(NativeMethods.PyList_Append(sysPaths, pyPath), "PyList_Append(sys.path)");
+            }
+            finally
+            {
+                NativeMethods.Py_DecRef(pyPath);
+            }
         }
 
         _logger.AppendedSysPaths(paths.Count);
@@ -314,6 +357,10 @@ public static class PyRuntime
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate IntPtr DlOpenDelegate([MarshalAs(UnmanagedType.LPStr)] string? path, int flags);
+
+    private static StringComparison PathComparison => OperatingSystem.IsWindows()
+        ? StringComparison.OrdinalIgnoreCase
+        : StringComparison.Ordinal;
 
     /// <summary>
     /// On Linux/macOS, the Python shared library lives in <c>{home}/lib/</c>.
