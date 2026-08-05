@@ -11,7 +11,11 @@ if (!PythonLibraryLocator.IsAvailable)
     return 1;
 }
 
-PyRuntime.Initialize();
+PyRuntime.Initialize(new PyRuntimeOptions
+{
+    // Bound admitted Python operations to provide application-level backpressure.
+    MaximumConcurrentAsyncOperations = 64,
+});
 using var interp = PyRuntime.CreateInterpreter();
 Console.WriteLine($"Python {interp.GetPythonVersion()}");
 Console.WriteLine();

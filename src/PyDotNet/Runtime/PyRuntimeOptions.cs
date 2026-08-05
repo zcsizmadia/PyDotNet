@@ -33,6 +33,19 @@ public sealed class PyRuntimeOptions
     public bool ReleaseGilAfterInit { get; init; } = true;
 
     /// <summary>
+    /// Maximum number of .NET operations concurrently admitted to the persistent
+    /// Python asyncio host. Additional callers asynchronously wait, providing
+    /// backpressure without occupying a thread-pool thread. Defaults to <c>256</c>.
+    /// </summary>
+    public int MaximumConcurrentAsyncOperations { get; init; } = 256;
+
+    /// <summary>
+    /// Maximum time graceful shutdown waits for admitted Python operations before
+    /// cancelling the remaining Python futures. Defaults to 30 seconds.
+    /// </summary>
+    public TimeSpan AsyncShutdownTimeout { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Validates the options and throws <see cref="ArgumentOutOfRangeException"/>
     /// if any value is outside the accepted range.
     /// </summary>
@@ -42,6 +55,18 @@ public sealed class PyRuntimeOptions
         {
             throw new ArgumentOutOfRangeException(nameof(InterpreterPoolSize),
                 InterpreterPoolSize, "InterpreterPoolSize must be at least 1.");
+        }
+
+        if (MaximumConcurrentAsyncOperations < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(MaximumConcurrentAsyncOperations),
+                MaximumConcurrentAsyncOperations, "MaximumConcurrentAsyncOperations must be at least 1.");
+        }
+
+        if (AsyncShutdownTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(AsyncShutdownTimeout),
+                AsyncShutdownTimeout, "AsyncShutdownTimeout must be positive.");
         }
     }
 }

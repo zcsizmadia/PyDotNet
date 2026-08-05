@@ -12,7 +12,29 @@ public sealed class PyRuntimeOptionsTests
         await Assert.That(options.InterpreterPoolSize).IsEqualTo(1);
         await Assert.That(options.PythonLibraryPath).IsNull();
         await Assert.That(options.ReleaseGilAfterInit).IsTrue();
+        await Assert.That(options.MaximumConcurrentAsyncOperations).IsEqualTo(256);
+        await Assert.That(options.AsyncShutdownTimeout).IsEqualTo(TimeSpan.FromSeconds(30));
         await Assert.That(options.AdditionalSysPaths).IsEmpty();
+    }
+
+    [Test]
+    public async Task Validate_ZeroAsyncConcurrency_ThrowsArgumentOutOfRange()
+    {
+        var options = new PyRuntimeOptions { MaximumConcurrentAsyncOperations = 0 };
+
+        await Assert.That(() => options.Validate())
+            .Throws<ArgumentOutOfRangeException>()
+            .WithMessageContaining("MaximumConcurrentAsyncOperations");
+    }
+
+    [Test]
+    public async Task Validate_ZeroAsyncShutdownTimeout_ThrowsArgumentOutOfRange()
+    {
+        var options = new PyRuntimeOptions { AsyncShutdownTimeout = TimeSpan.Zero };
+
+        await Assert.That(() => options.Validate())
+            .Throws<ArgumentOutOfRangeException>()
+            .WithMessageContaining("AsyncShutdownTimeout");
     }
 
     [Test]

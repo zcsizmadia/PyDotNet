@@ -26,6 +26,9 @@ Each activity has a low-cardinality `pydotnet.operation` tag. Failed operations 
 | `pydotnet.python.operations` | Counter | `{operation}` |
 | `pydotnet.python.errors` | Counter | `{error}` |
 | `pydotnet.python.operation.duration` | Histogram | `ms` |
+| `pydotnet.async.active` | Up/down counter | `{operation}` |
+| `pydotnet.async.waiting` | Up/down counter | `{operation}` |
+| `pydotnet.async.cancellations` | Counter | `{cancellation}` |
 
 Operation instruments use an `operation` tag with one of `import`, `execute`, `evaluate`, or `call`.
 
