@@ -408,4 +408,29 @@ public sealed class TypeMarshalingTests
         await Assert.That(() => value.As<bool>())
             .Throws<PythonException>();
     }
+
+    [Test]
+    public async Task IntegerConversion_Error_PropagatesPythonException()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        interp.Execute("class BadIndex:\n    def __index__(self):\n        raise RuntimeError('bad index')\nbad_index = BadIndex()");
+        using var value = interp.Evaluate("bad_index");
+
+        await Assert.That(() => value.As<long>()).Throws<PythonException>();
+    }
+
+    [Test]
+    public async Task FloatConversion_Error_PropagatesPythonException()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        interp.Execute("class BadFloat:\n    def __float__(self):\n        raise RuntimeError('bad float')\nbad_float = BadFloat()");
+        using var value = interp.Evaluate("bad_float");
+
+        await Assert.That(() => value.As<double>()).Throws<PythonException>();
+    }
+
 }

@@ -1346,6 +1346,20 @@ Each plugin wraps a focused subset of the underlying Python library's API. The t
 | **PyDotNet.Torch** | ~35 | ~700 | Autograd (`requires_grad`, `grad`, `backward`, `detach`); device movement (`to`, `cpu`, `cuda`); arithmetic (`+`, `-`, `*`, `/`, `@`, unary `-`); shape (`reshape`, `view`, `transpose`, `.T`, `squeeze`, `unsqueeze`); reductions (`mean`, `sum`); element-wise math (`abs`, `exp`, `log`, `sqrt`); activations (`relu`, `sigmoid`, `tanh`, `softmax`); data access (`item`, DLPack, buffer protocol); factory (`zeros`, `ones`, `empty`, `from_dlpack`) | `clone`, `contiguous`, `permute`, `cat`/`stack`, `max`/`min`, `norm`, `clamp`, index/slice access, in-place variants |
 | **PyDotNet.Matplotlib** | ~15 | ~500 | Figure/axes creation; line (`plot`), scatter, bar, histogram; title/xlabel/ylabel; legend; grid; axis limits (`set_xlim`, `set_ylim`); PNG/SVG/PDF rendering via headless Agg backend | Subplots grid (`subplots(m,n)`), twin axes, log scale, color bars, 3-D plots, `imshow`, animation, custom tickers |
 
+## Code coverage
+
+The test suite uses the Microsoft Testing Platform-native Coverlet extension. Coverage is collected serially because CPython is process-global, then merged across the core, lifecycle, snippets, NumPy, DataFrames, Torch, and Matplotlib test projects.
+
+Install the Python packages used by the integration tests, then run:
+
+```powershell
+./eng/Collect-Coverage.ps1
+```
+
+The merged Cobertura report is written to `coverage/coverage.cobertura.xml`. CI enforces the committed baseline in `eng/coverage-baseline.json`, with absolute floors of 60% line coverage and 45% branch coverage. The longer-term targets are 75% lines and 60% branches. Raise the baseline whenever coverage improves; reductions fail the coverage job.
+
+Generated sources, test assemblies, benchmark assemblies, and native P/Invoke declarations are excluded. The dedicated coverage job runs once on Ubuntu with Python 3.14 and .NET 10; the normal build matrix continues to validate all supported operating systems, Python versions, and target frameworks.
+
 ## Roadmap
 
 Items below are planned or under active investigation. Rough priority order — earlier items are closer to being started.

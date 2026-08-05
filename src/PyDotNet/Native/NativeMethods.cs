@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 
 // CA2101 fires when string P/Invoke parameters don't use LPWStr/LPTStr.
@@ -13,6 +14,7 @@ namespace PyDotNet.Native;
 /// during initialization and redirects the logical name "python" to the discovered
 /// platform-specific shared library.
 /// </summary>
+[ExcludeFromCodeCoverage]
 internal static partial class NativeMethods
 {
     internal const string PythonDll = "python";

@@ -84,9 +84,9 @@ public static unsafe class PyArrowBridge
 
             if (capsule == IntPtr.Zero)
             {
-                PythonException.ThrowIfPythonErrorOccurred();
                 pinnedHandle.Free();
                 pinnedHandle = default;
+                PythonException.ThrowIfPythonErrorOccurred();
                 return false;
             }
 
@@ -190,11 +190,11 @@ public static unsafe class PyArrowBridge
 
             if (result == IntPtr.Zero)
             {
-                PythonException.ThrowIfPythonErrorOccurred();
                 arrayHandle.Free();
                 arrayHandle = default;
                 schemaHandle.Free();
                 schemaHandle = default;
+                PythonException.ThrowIfPythonErrorOccurred();
                 return false;
             }
 

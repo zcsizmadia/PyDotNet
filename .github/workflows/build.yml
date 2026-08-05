@@ -88,3 +88,54 @@ jobs:
           name: nuget-packages
           path: |
             nupkgs/*.nupkg
+
+  coverage:
+    runs-on: ubuntu-latest
+    name: Coverage - Ubuntu - Python 3.14 - .NET 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          update-environment: true
+
+      - name: Install Python packages
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy pandas pyarrow torch matplotlib
+          pip install polars-lts-cpu || pip install polars
+
+      - name: Restore tools and dependencies
+        run: |
+          dotnet tool restore
+          dotnet restore
+
+      - name: Build coverage target
+        run: dotnet build -c Release -f net10.0 --no-restore
+
+      - name: Collect coverage
+        shell: pwsh
+        run: ./eng/Collect-Coverage.ps1 -NoBuild
+
+      - name: Publish coverage summary
+        shell: pwsh
+        run: |
+          [xml] $report = Get-Content coverage/coverage.cobertura.xml
+          $line = [math]::Round(([double] $report.coverage.'line-rate') * 100, 2)
+          $branch = [math]::Round(([double] $report.coverage.'branch-rate') * 100, 2)
+          "## Code coverage`n`n- Lines: **$line%**`n- Branches: **$branch%**" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-cobertura
+          path: coverage/coverage.cobertura.xml

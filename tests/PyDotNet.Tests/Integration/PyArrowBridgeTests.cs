@@ -131,4 +131,19 @@ public sealed class PyArrowBridgeTests
             }
         }
     }
+
+    [Test]
+    public async Task TryExportStream_ProtocolException_ReleasesPinnedHandle()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        interp.Execute("class BrokenArrow:\n    def __arrow_c_stream__(self, requested_schema=None):\n        raise RuntimeError('broken stream')");
+        using var broken = interp.Evaluate("BrokenArrow()");
+
+        System.Runtime.InteropServices.GCHandle handle = default;
+        await Assert.That(() => PyArrowBridge.TryExportStream(broken, out _, out handle))
+            .Throws<Exception>();
+        await Assert.That(handle.IsAllocated).IsFalse();
+    }
 }

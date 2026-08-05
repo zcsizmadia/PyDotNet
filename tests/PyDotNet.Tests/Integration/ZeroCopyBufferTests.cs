@@ -251,6 +251,39 @@ public sealed class ZeroCopyBufferTests
     }
 
     [Test]
+    public async Task Buffer_AsMemory_PinAndDisposedAccess_AreSafe()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        using var ba = interp.Evaluate("bytearray(b'\\x01\\x02\\x03')");
+        var buffer = ba.AsBuffer();
+        var memory = buffer.AsMemory<byte>();
+
+        using (memory.Pin())
+        {
+            await Assert.That(memory.Length).IsEqualTo(3);
+        }
+
+        buffer.Dispose();
+        int ReadFirstByte() => memory.Span[0];
+        await Assert.That(ReadFirstByte).Throws<ObjectDisposedException>();
+    }
+
+    [Test]
+    public async Task Buffer_ConcurrentDispose_IsIdempotent()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        using var ba = interp.Evaluate("bytearray(16)");
+        var buffer = ba.AsBuffer();
+
+        await Task.WhenAll(Enumerable.Range(0, 32).Select(_ => Task.Run(buffer.Dispose)));
+        await Assert.That(() => buffer.AsSpan<byte>()).Throws<ObjectDisposedException>();
+    }
+
+    [Test]
     public async Task Buffer_AsReadOnlySpan_ReadsCorrectValues()
     {
         await PythonEnvironment.SkipIfUnavailableAsync();

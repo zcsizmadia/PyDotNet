@@ -206,5 +206,27 @@ public sealed class DLPackTests
 
         await Assert.That(() => DLPackTensor.Export(mem, [])).Throws<ArgumentException>();
     }
+
+    [Test]
+    public async Task From_ObjectWithoutDLPack_PropagatesPythonError()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        using var plainObject = interp.Evaluate("object()");
+
+        await Assert.That(() => DLPackTensor.From(plainObject)).Throws<Exception>();
+    }
+
+    [Test]
+    public async Task GetDevice_ObjectWithoutDLPack_PropagatesPythonError()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        using var plainObject = interp.Evaluate("object()");
+
+        await Assert.That(() => DLPackTensor.GetDevice(plainObject)).Throws<Exception>();
+    }
 }
 

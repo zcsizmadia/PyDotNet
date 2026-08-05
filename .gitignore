@@ -490,3 +490,6 @@ $RECYCLE.BIN/
 
 # Microsoft.Testing.Platform first-run sentinels
 /Microsoft/TestingPlatform/
+
+# Local code coverage output
+/coverage/
