@@ -21,7 +21,6 @@ public class PyObject : IDisposable
 {
     private IntPtr _handle;
     private volatile bool _disposed;
-    private readonly long _registryId;
 
     internal PyObject(IntPtr handle)
     {
@@ -31,7 +30,7 @@ public class PyObject : IDisposable
         }
 
         _handle = handle;
-        _registryId = PyObjectRegistry.Add(this);
+        PyObjectRegistry.Add(this);
     }
 
     /// <summary>Gets the raw CPython object pointer. Throws if this object has been disposed.</summary>
@@ -574,7 +573,7 @@ public class PyObject : IDisposable
         }
 
         _disposed = true;
-        PyObjectRegistry.Remove(_registryId);
+        PyObjectRegistry.Remove(this);
 
         if (disposing)
         {

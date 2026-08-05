@@ -90,6 +90,7 @@ public static class PyRuntime
             {
                 InitializeCore(options);
                 Volatile.Write(ref _state, (int)PyRuntimeState.Running);
+                PyRuntimeDiagnostics.RuntimeInitialized();
             }
             catch
             {
@@ -157,6 +158,7 @@ public static class PyRuntime
             // Extension modules retain process-global state and executable pointers
             // into libpython, so unloading without finalizing would be unsafe.
             Volatile.Write(ref _state, (int)PyRuntimeState.Stopped);
+            PyRuntimeDiagnostics.RuntimeShutdown();
             _logger.ShutDown();
         }
     }

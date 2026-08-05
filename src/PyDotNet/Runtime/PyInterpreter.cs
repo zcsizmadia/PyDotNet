@@ -15,11 +15,12 @@ namespace PyDotNet.Runtime;
 public sealed class PyInterpreter : IDisposable
 {
     private readonly ILogger _logger;
-    private bool _disposed;
+    private int _disposed;
 
     internal PyInterpreter(ILogger logger)
     {
         _logger = logger ?? NullLogger.Instance;
+        PyRuntimeDiagnostics.InterpreterCreated();
         _logger.InterpreterCreated();
     }
 
@@ -33,17 +34,26 @@ public sealed class PyInterpreter : IDisposable
         EnsureNotDisposed();
         PyRuntime.EnsureInitialized();
 
-        using var gil = new GilScope();
-
-        var handle = NativeMethods.PyImport_ImportModule(moduleName);
-        if (handle == IntPtr.Zero)
+        using var operation = PyRuntimeDiagnostics.StartOperation("import");
+        try
         {
-            PythonException.ThrowIfPythonErrorOccurred();
-            throw new PyRuntimeException($"Failed to import module '{moduleName}' for unknown reasons.");
-        }
+            using var gil = new GilScope();
 
-        _logger.ModuleImported(moduleName);
-        return new PyModule(handle);
+            var handle = NativeMethods.PyImport_ImportModule(moduleName);
+            if (handle == IntPtr.Zero)
+            {
+                PythonException.ThrowIfPythonErrorOccurred();
+                throw new PyRuntimeException($"Failed to import module '{moduleName}' for unknown reasons.");
+            }
+
+            _logger.ModuleImported(moduleName);
+            return new PyModule(handle);
+        }
+        catch (Exception ex)
+        {
+            operation.Fail(ex);
+            throw;
+        }
     }
 
     /// <summary>
@@ -56,13 +66,21 @@ public sealed class PyInterpreter : IDisposable
         EnsureNotDisposed();
         PyRuntime.EnsureInitialized();
 
-        using var gil = new GilScope();
-
-        var result = NativeMethods.PyRun_SimpleString(code);
-        if (result != 0)
+        using var operation = PyRuntimeDiagnostics.StartOperation("execute");
+        try
         {
-            PythonException.ThrowIfPythonErrorOccurred();
-            throw new PyRuntimeException("PyRun_SimpleString returned a non-zero exit code.");
+            using var gil = new GilScope();
+            var result = NativeMethods.PyRun_SimpleString(code);
+            if (result != 0)
+            {
+                PythonException.ThrowIfPythonErrorOccurred();
+                throw new PyRuntimeException("PyRun_SimpleString returned a non-zero exit code.");
+            }
+        }
+        catch (Exception ex)
+        {
+            operation.Fail(ex);
+            throw;
         }
     }
 
@@ -76,19 +94,27 @@ public sealed class PyInterpreter : IDisposable
         EnsureNotDisposed();
         PyRuntime.EnsureInitialized();
 
-        using var gil = new GilScope();
-
-        var mainModule = NativeMethods.PyImport_AddModule("__main__"); // borrowed
-        var globals = NativeMethods.PyModule_GetDict(mainModule);      // borrowed
-
-        var result = NativeMethods.PyRun_String(expression, PyConstants.EvalInput, globals, globals);
-        if (result == IntPtr.Zero)
+        using var operation = PyRuntimeDiagnostics.StartOperation("evaluate");
+        try
         {
-            PythonException.ThrowIfPythonErrorOccurred();
-            throw new PyRuntimeException($"Failed to evaluate expression: {expression}");
-        }
+            using var gil = new GilScope();
+            var mainModule = NativeMethods.PyImport_AddModule("__main__"); // borrowed
+            var globals = NativeMethods.PyModule_GetDict(mainModule);      // borrowed
 
-        return PyObject.FromNewReference(result);
+            var result = NativeMethods.PyRun_String(expression, PyConstants.EvalInput, globals, globals);
+            if (result == IntPtr.Zero)
+            {
+                PythonException.ThrowIfPythonErrorOccurred();
+                throw new PyRuntimeException($"Failed to evaluate expression: {expression}");
+            }
+
+            return PyObject.FromNewReference(result);
+        }
+        catch (Exception ex)
+        {
+            operation.Fail(ex);
+            throw;
+        }
     }
 
     /// <summary>
@@ -313,17 +339,17 @@ public sealed class PyInterpreter : IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
-        if (_disposed)
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
             return;
         }
 
-        _disposed = true;
+        PyRuntimeDiagnostics.InterpreterDisposed();
         _logger.InterpreterDisposed();
     }
 
     private void EnsureNotDisposed()
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
     }
 }

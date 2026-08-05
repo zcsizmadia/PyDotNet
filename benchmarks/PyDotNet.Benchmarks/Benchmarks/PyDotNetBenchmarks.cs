@@ -30,9 +30,12 @@ public class PyDotNetBenchmarks
     private PyFunction _sqrtFn = null!;
     private PyFunction _fibFn = null!;
     private PyFunction _asyncIdentityFn = null!;
+    private PyFunction _noArgsFn = null!;
+    private PyFunction _manyArgsFn = null!;
     private PyObject _byteArray64K = null!;
 
     private static readonly string LongString = new('a', 1_000);
+    private static readonly object?[] IntList32 = Enumerable.Range(0, 32).Cast<object?>().ToArray();
     private static readonly int[] IntList100 = Enumerable.Range(0, 100).ToArray();
 
     [GlobalSetup]
@@ -47,6 +50,10 @@ public class PyDotNetBenchmarks
             def identity(x): return x
 
             def add(a, b): return a + b
+
+            def no_args(): return 42
+
+            def many_args(*args): return len(args)
 
             def fibonacci(n):
                 a, b = 0, 1
@@ -64,6 +71,8 @@ public class PyDotNetBenchmarks
         _sqrtFn          = _mathModule.GetFunction("sqrt");
         _fibFn           = _mainModule.GetFunction("fibonacci");
         _asyncIdentityFn = _mainModule.GetFunction("async_identity");
+        _noArgsFn        = _mainModule.GetFunction("no_args");
+        _manyArgsFn      = _mainModule.GetFunction("many_args");
         _byteArray64K    = _interp.Evaluate("BUFFER_64K");
     }
 
@@ -71,6 +80,8 @@ public class PyDotNetBenchmarks
     public void Cleanup()
     {
         _byteArray64K?.Dispose();
+        _manyArgsFn?.Dispose();
+        _noArgsFn?.Dispose();
         _asyncIdentityFn?.Dispose();
         _fibFn?.Dispose();
         _sqrtFn?.Dispose();
@@ -107,6 +118,14 @@ public class PyDotNetBenchmarks
         using var r = _addFn.Call(17, 25);
         return r.As<int>();
     }
+
+    [Benchmark(Description = "no_args() → int  [vectorcall zero-arg]")]
+    [BenchmarkCategory("Call")]
+    public int Call_NoArgs() => _noArgsFn.Call<int>();
+
+    [Benchmark(Description = "many_args(0..31) → int  [vectorcall heap path]")]
+    [BenchmarkCategory("Call")]
+    public int Call_ManyArgs() => _manyArgsFn.Call<int>(IntList32);
 
     [Benchmark(Description = "math.sqrt(144.0) → double")]
     [BenchmarkCategory("Call")]
