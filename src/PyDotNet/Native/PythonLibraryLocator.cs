@@ -135,7 +135,7 @@ public static class PythonLibraryLocator
         {
             // rawPath may be just a filename — search arch-specific dir first, then common dirs.
             var dirs = new List<string>(5);
-            var multiarch = GetLinuxMultiarchTuple();
+            var multiarch = GetLinuxMultiarchTuple(RuntimeInformation.OSArchitecture);
             if (multiarch is not null)
             {
                 dirs.Add($"/usr/lib/{multiarch}");
@@ -254,7 +254,7 @@ public static class PythonLibraryLocator
 
         // 2. Filesystem glob fallback for environments where ldconfig is unavailable
         //    (minimal containers, Alpine, etc.).
-        var multiarch = GetLinuxMultiarchTuple();
+        var multiarch = GetLinuxMultiarchTuple(RuntimeInformation.OSArchitecture);
         var searchDirs = new List<string>(4);
         if (multiarch is not null)
         {
@@ -340,8 +340,8 @@ public static class PythonLibraryLocator
     /// Returns the Debian/Ubuntu multiarch tuple for the current architecture,
     /// e.g. <c>"x86_64-linux-gnu"</c>, or <see langword="null"/> for unknown arches.
     /// </summary>
-    private static string? GetLinuxMultiarchTuple() =>
-        RuntimeInformation.OSArchitecture switch
+    internal static string? GetLinuxMultiarchTuple(Architecture architecture) =>
+        architecture switch
         {
             Architecture.X64   => "x86_64-linux-gnu",
             Architecture.Arm64 => "aarch64-linux-gnu",
@@ -355,7 +355,7 @@ public static class PythonLibraryLocator
     /// <see cref="Enumerable.MaxBy{TSource,TKey}(IEnumerable{TSource},Func{TSource,TKey})"/> can pick the newest version.
     /// Returns 0 for paths that do not match the expected naming convention.
     /// </summary>
-    private static int ParsePythonMinorVersion(string? path)
+    internal static int ParsePythonMinorVersion(string? path)
     {
         if (path is null)
         {
