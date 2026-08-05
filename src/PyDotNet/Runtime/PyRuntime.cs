@@ -122,6 +122,11 @@ public static class PyRuntime
             Volatile.Write(ref _state, (int)PyRuntimeState.Stopping);
             _logger.ShuttingDown();
 
+            // Stop accepting async work and drain all admitted operations before
+            // acquiring the shutdown GIL. In-flight coroutines need the GIL in order
+            // to complete and release their host admission slots.
+            AsyncBridge.StopHost(_options.AsyncShutdownTimeout);
+
             // Use PyGILState_Ensure rather than PyEval_RestoreThread so that
             // Shutdown() works correctly regardless of which thread calls it.
             // (Shutdown() is invoked via Task.Run on a thread-pool thread — not
@@ -268,6 +273,10 @@ public static class PyRuntime
         using (var gil = new GilScope())
         {
             AsyncBridge.WarmUp();
+            if (options.ReleaseGilAfterInit)
+            {
+                AsyncBridge.StartHost(options.MaximumConcurrentAsyncOperations);
+            }
         }
 
         if (initializedHere && options.ReleaseGilAfterInit)

@@ -1352,6 +1352,12 @@ Positional Python calls use CPython's vectorcall protocol to avoid temporary tup
 
 PyDotNet also publishes opt-in OpenTelemetry-compatible activities and metrics through `PyRuntimeDiagnostics`. Traces cover imports, execution, evaluation, and calls; metrics cover latency, errors, operations, runtime transitions, and active interpreters/objects. See [Observability](docs/observability.md) for instrument names and configuration.
 
+## Production async hosting
+
+Async calls run on a process-wide persistent `asyncio` event loop with configurable
+admission control, Python-side cancellation propagation, and graceful runtime draining.
+See [Production async hosting](docs/async-hosting.md) for configuration and lifecycle guidance.
+
 ## Roadmap
 
 Items below are planned or under active investigation. Rough priority order — earlier items are closer to being started.
@@ -1367,11 +1373,9 @@ A first-class bridge for columnar data between .NET and Python without any inter
 
 ### Advanced async patterns
 
-The core async bridge is complete. Next steps:
+The core async bridge includes persistent production hosting, backpressure, Python-side
+cancellation, an `asyncio.Queue` bridge, and structured concurrency. Next steps:
 
-- **Cancellation propagation** — map `CancellationToken` cancellations to Python `asyncio` task cancellation
-- **`asyncio.Queue` bridge** — expose a Python `asyncio.Queue` as a .NET `Channel<T>` (backpressure-aware)
-- **Structured concurrency** — wrap Python `asyncio.TaskGroup` (3.11+) so .NET can await a group of Python sub-tasks
 - **`async for` with timeouts** — per-item timeout on `IAsyncEnumerable<T>`
 
 ### NativeAOT embedding

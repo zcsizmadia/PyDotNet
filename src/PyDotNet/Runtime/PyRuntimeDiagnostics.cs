@@ -35,6 +35,12 @@ public static class PyRuntimeDiagnostics
         Meter.CreateCounter<long>("pydotnet.python.errors", unit: "{error}");
     private static readonly Histogram<double> _operationDuration =
         Meter.CreateHistogram<double>("pydotnet.python.operation.duration", unit: "ms");
+    private static readonly UpDownCounter<long> _asyncActive =
+        Meter.CreateUpDownCounter<long>("pydotnet.async.active", unit: "{operation}");
+    private static readonly UpDownCounter<long> _asyncWaiting =
+        Meter.CreateUpDownCounter<long>("pydotnet.async.waiting", unit: "{operation}");
+    private static readonly Counter<long> _asyncCancellations =
+        Meter.CreateCounter<long>("pydotnet.async.cancellations", unit: "{cancellation}");
 
     internal static void RuntimeInitialized() => _runtimeInitializations.Add(1);
 
@@ -43,6 +49,11 @@ public static class PyRuntimeDiagnostics
     internal static void InterpreterCreated() => _activeInterpreters.Add(1);
 
     internal static void InterpreterDisposed() => _activeInterpreters.Add(-1);
+
+    internal static void AsyncStarted() => _asyncActive.Add(1);
+    internal static void AsyncCompleted() => _asyncActive.Add(-1);
+    internal static void AsyncWaiting(long delta) => _asyncWaiting.Add(delta);
+    internal static void AsyncCanceled() => _asyncCancellations.Add(1);
 
     internal static void ObjectCreated()
     {

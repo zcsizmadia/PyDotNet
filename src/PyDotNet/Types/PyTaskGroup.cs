@@ -107,13 +107,11 @@ public sealed class PyTaskGroup : IDisposable
             return Task.CompletedTask;
         }
 
-        return Task.Run(() =>
+        return AsyncBridge.RunHostedAsync<object?>(() =>
         {
-            using var gil = new GilScope();
             EnsureHelperInstalled(GatherHelperCode, GatherInstalledVar);
-            var wrapper = BuildWrapperCoroutine("_pydotnet_gather", coroutines);
-            AsyncBridge.RunCoroutineHandle<object?>(wrapper); // steals wrapper
-        }, cancellationToken).WaitAsync(cancellationToken);
+            return BuildWrapperCoroutine("_pydotnet_gather", coroutines);
+        }, _ => null, cancellationToken);
     }
 
     /// <summary>
@@ -129,13 +127,11 @@ public sealed class PyTaskGroup : IDisposable
             return Task.FromResult(Array.Empty<T>());
         }
 
-        return Task.Run(() =>
+        return AsyncBridge.RunHostedAsync(() =>
         {
-            using var gil = new GilScope();
             EnsureHelperInstalled(GatherHelperCode, GatherInstalledVar);
-            var wrapper = BuildWrapperCoroutine("_pydotnet_gather", coroutines);
-            return CollectResults<T>(wrapper); // steals wrapper
-        }, cancellationToken).WaitAsync(cancellationToken);
+            return BuildWrapperCoroutine("_pydotnet_gather", coroutines);
+        }, CollectResults<T>, cancellationToken);
     }
 
     /// <summary>
@@ -155,14 +151,12 @@ public sealed class PyTaskGroup : IDisposable
             return Task.CompletedTask;
         }
 
-        return Task.Run(() =>
+        return AsyncBridge.RunHostedAsync<object?>(() =>
         {
-            using var gil = new GilScope();
             EnsureTaskGroupAvailable();
             EnsureHelperInstalled(TaskGroupHelperCode, TaskGroupInstalledVar);
-            var wrapper = BuildWrapperCoroutine("_pydotnet_task_group", coroutines);
-            AsyncBridge.RunCoroutineHandle<object?>(wrapper); // steals wrapper
-        }, cancellationToken).WaitAsync(cancellationToken);
+            return BuildWrapperCoroutine("_pydotnet_task_group", coroutines);
+        }, _ => null, cancellationToken);
     }
 
     /// <summary>
@@ -182,14 +176,12 @@ public sealed class PyTaskGroup : IDisposable
             return Task.FromResult(Array.Empty<T>());
         }
 
-        return Task.Run(() =>
+        return AsyncBridge.RunHostedAsync(() =>
         {
-            using var gil = new GilScope();
             EnsureTaskGroupAvailable();
             EnsureHelperInstalled(TaskGroupHelperCode, TaskGroupInstalledVar);
-            var wrapper = BuildWrapperCoroutine("_pydotnet_task_group", coroutines);
-            return CollectResults<T>(wrapper); // steals wrapper
-        }, cancellationToken).WaitAsync(cancellationToken);
+            return BuildWrapperCoroutine("_pydotnet_task_group", coroutines);
+        }, CollectResults<T>, cancellationToken);
     }
 
     // ── IDisposable ───────────────────────────────────────────────────────
@@ -359,47 +351,37 @@ public sealed class PyTaskGroup : IDisposable
     }
 
     /// <summary>
-    /// Drives <paramref name="wrapper"/> coroutine to completion and extracts typed results
-    /// from the returned Python list.
-    /// <paramref name="wrapper"/> is a stolen reference. GIL must be held.
+    /// Extracts typed results from the returned Python list. GIL must be held.
     /// </summary>
-    private static T[] CollectResults<T>(IntPtr wrapper)
+    private static T[] CollectResults<T>(IntPtr pyList)
     {
-        var pyList = AsyncBridge.RunCoroutineHandleRaw(wrapper); // steals wrapper; returns owned list
-        try
+        var count = (int)NativeMethods.PySequence_Length(pyList);
+        if (count < 0)
         {
-            var count = (int)NativeMethods.PySequence_Length(pyList);
-            if (count < 0)
+            NativeMethods.PyErr_Clear();
+            return Array.Empty<T>();
+        }
+
+        var results = new T[count];
+        for (int i = 0; i < count; i++)
+        {
+            var item = NativeMethods.PySequence_GetItem(pyList, i); // new reference
+            if (item == IntPtr.Zero)
             {
-                NativeMethods.PyErr_Clear();
-                return Array.Empty<T>();
+                PythonException.ThrowIfPythonErrorOccurred();
+                throw new PyInteropException($"Failed to retrieve item {i} from results list.");
             }
 
-            var results = new T[count];
-            for (int i = 0; i < count; i++)
+            try
             {
-                var item = NativeMethods.PySequence_GetItem(pyList, i); // new reference
-                if (item == IntPtr.Zero)
-                {
-                    PythonException.ThrowIfPythonErrorOccurred();
-                    throw new PyInteropException($"Failed to retrieve item {i} from results list.");
-                }
-
-                try
-                {
-                    results[i] = TypeConverter.FromPython<T>(item);
-                }
-                finally
-                {
-                    NativeMethods.Py_DecRef(item);
-                }
+                results[i] = TypeConverter.FromPython<T>(item);
             }
+            finally
+            {
+                NativeMethods.Py_DecRef(item);
+            }
+        }
 
-            return results;
-        }
-        finally
-        {
-            NativeMethods.Py_DecRef(pyList);
-        }
+        return results;
     }
 }

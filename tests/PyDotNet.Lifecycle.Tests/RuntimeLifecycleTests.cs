@@ -107,13 +107,50 @@ public sealed class RuntimeLifecycleTests
         await Assert.That(PyRuntime.State).IsEqualTo(PyRuntimeState.Running);
     }
 
-    private static void InitializeOrSkip()
+    [Test]
+    public async Task AsyncHost_AdmissionLimitProvidesBackpressure()
+    {
+        InitializeOrSkip(maximumAsyncOperations: 1);
+        using var interpreter = PyRuntime.CreateInterpreter();
+        interpreter.Execute("import asyncio\nasync def _limited(): await asyncio.sleep(0.08); return 1");
+        using var module = interpreter.ImportModule("__main__");
+        using var function = module.GetFunction("_limited");
+
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        await Task.WhenAll(function.CallAsync<int>(), function.CallAsync<int>());
+
+        await Assert.That(started.Elapsed).IsGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(130));
+    }
+
+    [Test]
+    public async Task Shutdown_DrainsAdmittedAsyncOperation()
+    {
+        InitializeOrSkip();
+        using var interpreter = PyRuntime.CreateInterpreter();
+        interpreter.Execute("import asyncio\nasync def _during_shutdown(): await asyncio.sleep(0.05); return 42");
+        using var module = interpreter.ImportModule("__main__");
+        using var function = module.GetFunction("_during_shutdown");
+
+        var operation = function.CallAsync<int>();
+        var shutdown = Task.Run(PyRuntime.Shutdown);
+
+        await Assert.That(await operation).IsEqualTo(42);
+        await shutdown;
+        await Assert.That(PyRuntime.State).IsEqualTo(PyRuntimeState.Stopped);
+    }
+
+
+    private static void InitializeOrSkip(int maximumAsyncOperations = 256)
     {
         if (!PythonLibraryLocator.IsAvailable)
         {
             throw new SkipTestException("Python shared library is unavailable.");
         }
 
-        PyRuntime.Initialize(new PyRuntimeOptions { ReleaseGilAfterInit = true });
+        PyRuntime.Initialize(new PyRuntimeOptions
+        {
+            ReleaseGilAfterInit = true,
+            MaximumConcurrentAsyncOperations = maximumAsyncOperations,
+        });
     }
 }

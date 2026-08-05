@@ -15,6 +15,7 @@ internal static class AsyncBridge
     // ── asyncio module cache ───────────────────────────────────────────────
 
     private static volatile IntPtr _asyncioModule;
+    private static AsyncioHost? _host;
 
     /// <summary>
     /// Imports and caches <c>asyncio</c> while runtime initialization still owns the
@@ -33,6 +34,19 @@ internal static class AsyncBridge
 
         NativeMethods.Py_DecRef(module);
     }
+
+    internal static void StartHost(int maximumConcurrency)
+    {
+        _host ??= AsyncioHost.Start(maximumConcurrency);
+    }
+
+    internal static void StopHost(TimeSpan timeout)
+    {
+        var host = Interlocked.Exchange(ref _host, null);
+        host?.Stop(timeout);
+    }
+
+    internal static bool IsHostRunning => _host is not null;
 
     /// <summary>
     /// Returns a new reference to the cached <c>asyncio</c> module, importing it on first use.
@@ -81,14 +95,13 @@ internal static class AsyncBridge
     /// </summary>
     internal static Task<T> RunCoroutineAsync<T>(IntPtr pyCallable, object?[] args)
     {
-        return Task.Run(() => RunCoroutineSync<T>(pyCallable, args));
+        return GetHost().RunAsync<T>(() => CreateCoroutine(pyCallable, args, kwargs: null), CancellationToken.None);
     }
 
     /// <inheritdoc cref="RunCoroutineAsync{T}(IntPtr,object?[])"/>
     internal static Task<T> RunCoroutineAsync<T>(IntPtr pyCallable, object?[] args, CancellationToken cancellationToken)
     {
-        return Task.Run(() => RunCoroutineSync<T>(pyCallable, args), cancellationToken)
-                   .WaitAsync(cancellationToken);
+        return GetHost().RunAsync<T>(() => CreateCoroutine(pyCallable, args, kwargs: null), cancellationToken);
     }
 
     /// <summary>
@@ -96,14 +109,13 @@ internal static class AsyncBridge
     /// </summary>
     internal static Task RunCoroutineAsync(IntPtr pyCallable, object?[] args)
     {
-        return Task.Run(() => RunCoroutineSync<object?>(pyCallable, args));
+        return GetHost().RunAsync<object?>(() => CreateCoroutine(pyCallable, args, kwargs: null), CancellationToken.None);
     }
 
     /// <inheritdoc cref="RunCoroutineAsync(IntPtr,object?[])"/>
     internal static Task RunCoroutineAsync(IntPtr pyCallable, object?[] args, CancellationToken cancellationToken)
     {
-        return Task.Run(() => RunCoroutineSync<object?>(pyCallable, args), cancellationToken)
-                   .WaitAsync(cancellationToken);
+        return GetHost().RunAsync<object?>(() => CreateCoroutine(pyCallable, args, kwargs: null), cancellationToken);
     }
 
     /// <summary>
@@ -114,7 +126,7 @@ internal static class AsyncBridge
         object?[] args,
         IDictionary<string, object?> kwargs)
     {
-        return Task.Run(() => RunCoroutineWithKwargsSync<T>(pyCallable, args, kwargs));
+        return GetHost().RunAsync<T>(() => CreateCoroutine(pyCallable, args, kwargs), CancellationToken.None);
     }
 
     /// <inheritdoc cref="RunCoroutineAsync{T}(IntPtr,object?[],IDictionary{string,object?})"/>
@@ -124,8 +136,7 @@ internal static class AsyncBridge
         IDictionary<string, object?> kwargs,
         CancellationToken cancellationToken)
     {
-        return Task.Run(() => RunCoroutineWithKwargsSync<T>(pyCallable, args, kwargs), cancellationToken)
-                   .WaitAsync(cancellationToken);
+        return GetHost().RunAsync<T>(() => CreateCoroutine(pyCallable, args, kwargs), cancellationToken);
     }
 
     /// <summary>
@@ -136,7 +147,7 @@ internal static class AsyncBridge
         object?[] args,
         IDictionary<string, object?> kwargs)
     {
-        return Task.Run(() => RunCoroutineWithKwargsSync<object?>(pyCallable, args, kwargs));
+        return GetHost().RunAsync<object?>(() => CreateCoroutine(pyCallable, args, kwargs), CancellationToken.None);
     }
 
     /// <inheritdoc cref="RunCoroutineAsync(IntPtr,object?[],IDictionary{string,object?})"/>
@@ -146,8 +157,7 @@ internal static class AsyncBridge
         IDictionary<string, object?> kwargs,
         CancellationToken cancellationToken)
     {
-        return Task.Run(() => RunCoroutineWithKwargsSync<object?>(pyCallable, args, kwargs), cancellationToken)
-                   .WaitAsync(cancellationToken);
+        return GetHost().RunAsync<object?>(() => CreateCoroutine(pyCallable, args, kwargs), cancellationToken);
     }
 
     /// <summary>
@@ -157,11 +167,7 @@ internal static class AsyncBridge
     /// </summary>
     internal static Task<T> RunCoroutineObjectAsync<T>(IntPtr coroutine)
     {
-        return Task.Run(() =>
-        {
-            using var gil = new GilScope();
-            return RunCoroutineHandle<T>(coroutine); // steals reference
-        });
+        return GetHost().RunAsync<T>(() => coroutine, CancellationToken.None);
     }
 
     /// <summary>
@@ -173,11 +179,7 @@ internal static class AsyncBridge
     /// </summary>
     internal static Task<T> RunCoroutineObjectAsync<T>(IntPtr coroutine, CancellationToken cancellationToken)
     {
-        return Task.Run(() =>
-        {
-            using var gil = new GilScope();
-            return RunCoroutineHandle<T>(coroutine); // steals reference
-        }, cancellationToken).WaitAsync(cancellationToken);
+        return GetHost().RunAsync<T>(() => coroutine, cancellationToken);
     }
 
     /// <summary>
@@ -186,11 +188,7 @@ internal static class AsyncBridge
     /// </summary>
     internal static Task RunCoroutineObjectAsync(IntPtr coroutine)
     {
-        return Task.Run(() =>
-        {
-            using var gil = new GilScope();
-            RunCoroutineHandle<object?>(coroutine);
-        });
+        return GetHost().RunAsync<object?>(() => coroutine, CancellationToken.None);
     }
 
     /// <summary>
@@ -200,11 +198,7 @@ internal static class AsyncBridge
     /// </summary>
     internal static Task RunCoroutineObjectAsync(IntPtr coroutine, CancellationToken cancellationToken)
     {
-        return Task.Run(() =>
-        {
-            using var gil = new GilScope();
-            RunCoroutineHandle<object?>(coroutine);
-        }, cancellationToken).WaitAsync(cancellationToken);
+        return GetHost().RunAsync<object?>(() => coroutine, cancellationToken);
     }
 
     /// <summary>
@@ -240,37 +234,46 @@ internal static class AsyncBridge
         return new AsyncGeneratorEnumerable<T>(asyncIter);
     }
 
+    internal static Task<T> RunHostedAsync<T>(
+        Func<IntPtr> coroutineFactory,
+        Func<IntPtr, T> resultConverter,
+        CancellationToken cancellationToken = default)
+        => GetHost().RunAsync(coroutineFactory, resultConverter, cancellationToken);
+
     // ── Synchronous helpers (called on thread-pool threads) ───────────────
 
-    private static T RunCoroutineSync<T>(IntPtr pyCallable, object?[] args)
+    private static AsyncioHost GetHost()
     {
-        using var gil = new GilScope();
-
-        var argTuple = TypeConverter.ToTuple(args);
-        var coroutine = NativeMethods.PyObject_CallObject(pyCallable, argTuple);
-        NativeMethods.Py_DecRef(argTuple);
-
-        if (coroutine == IntPtr.Zero)
-        {
-            PythonException.ThrowIfPythonErrorOccurred();
-            throw new PyInteropException("Python callable returned null when constructing coroutine.");
-        }
-
-        return RunCoroutineHandle<T>(coroutine); // steals coroutine
+        return Volatile.Read(ref _host)
+            ?? throw new PyRuntimeException(
+                "The Python asyncio host is not running. Async APIs require ReleaseGilAfterInit=true.");
     }
 
-    private static T RunCoroutineWithKwargsSync<T>(
+    private static IntPtr CreateCoroutine(
         IntPtr pyCallable,
         object?[] args,
-        IDictionary<string, object?> kwargs)
+        IDictionary<string, object?>? kwargs)
     {
-        using var gil = new GilScope();
-
         var argTuple = TypeConverter.ToTuple(args);
-        var kwDict = TypeConverter.ToDict(kwargs);
-        var coroutine = NativeMethods.PyObject_Call(pyCallable, argTuple, kwDict);
+        IntPtr coroutine;
+        if (kwargs is null || kwargs.Count == 0)
+        {
+            coroutine = NativeMethods.PyObject_CallObject(pyCallable, argTuple);
+        }
+        else
+        {
+            var kwDict = TypeConverter.ToDict(kwargs);
+            try
+            {
+                coroutine = NativeMethods.PyObject_Call(pyCallable, argTuple, kwDict);
+            }
+            finally
+            {
+                NativeMethods.Py_DecRef(kwDict);
+            }
+        }
+
         NativeMethods.Py_DecRef(argTuple);
-        NativeMethods.Py_DecRef(kwDict);
 
         if (coroutine == IntPtr.Zero)
         {
@@ -278,7 +281,7 @@ internal static class AsyncBridge
             throw new PyInteropException("Python callable returned null when constructing coroutine.");
         }
 
-        return RunCoroutineHandle<T>(coroutine); // steals coroutine
+        return coroutine;
     }
 
     // ── Core event-loop helpers ───────────────────────────────────────────
@@ -674,6 +677,62 @@ internal static class AsyncBridge
         }
     }
 
+    private static IntPtr CreateNextCoroutine(IntPtr asyncIter)
+    {
+        var anext = NativeMethods.PyObject_GetAttrString(asyncIter, "__anext__");
+        if (anext == IntPtr.Zero)
+        {
+            PythonException.ThrowIfPythonErrorOccurred();
+            throw new PyInteropException("Async iterator has no __anext__ method.");
+        }
+
+        try
+        {
+            var noArgs = NativeMethods.PyTuple_New(0);
+            var coroutine = NativeMethods.PyObject_CallObject(anext, noArgs);
+            NativeMethods.Py_DecRef(noArgs);
+            if (coroutine == IntPtr.Zero)
+            {
+                PythonException.ThrowIfPythonErrorOccurred();
+                throw new PyInteropException("Async iterator did not return an awaitable.");
+            }
+
+            return coroutine;
+        }
+        finally
+        {
+            NativeMethods.Py_DecRef(anext);
+        }
+    }
+
+    private static IntPtr CreateCloseCoroutine(IntPtr asyncIter)
+    {
+        var close = NativeMethods.PyObject_GetAttrString(asyncIter, "aclose");
+        if (close == IntPtr.Zero)
+        {
+            PythonException.ThrowIfPythonErrorOccurred();
+            throw new PyInteropException("Async iterator has no aclose method.");
+        }
+
+        try
+        {
+            var noArgs = NativeMethods.PyTuple_New(0);
+            var coroutine = NativeMethods.PyObject_CallObject(close, noArgs);
+            NativeMethods.Py_DecRef(noArgs);
+            if (coroutine == IntPtr.Zero)
+            {
+                PythonException.ThrowIfPythonErrorOccurred();
+                throw new PyInteropException("Async iterator aclose did not return an awaitable.");
+            }
+
+            return coroutine;
+        }
+        finally
+        {
+            NativeMethods.Py_DecRef(close);
+        }
+    }
+
     // ── IAsyncEnumerable implementation ───────────────────────────────────
 
     private sealed class AsyncGeneratorEnumerable<T> : IAsyncEnumerable<T>
@@ -752,33 +811,25 @@ internal static class AsyncBridge
                 return false;
             }
 
-            return await Task.Run(MoveNextCore, _ct).ConfigureAwait(false);
-        }
-
-        private bool MoveNextCore()
-        {
-            using var gil = new GilScope();
-
-            if (!_started)
+            try
             {
-                _started = true;
-                _asyncIter = CreateAsyncIterator(_callable, _args, _kwargs);
-            }
+                _current = await GetHost().RunAsync<T>(() =>
+                {
+                    if (!_started)
+                    {
+                        _started = true;
+                        _asyncIter = CreateAsyncIterator(_callable, _args, _kwargs);
+                    }
 
-            if (_asyncIter == IntPtr.Zero)
-            {
-                return false;
+                    return CreateNextCoroutine(_asyncIter);
+                }, _ct).ConfigureAwait(false);
+                return true;
             }
-
-            var hasValue = FetchNextItem<T>(_asyncIter, out var item);
-            if (!hasValue)
+            catch (PythonException ex) when (ex.PythonExceptionType == "StopAsyncIteration")
             {
                 _exhausted = true;
                 return false;
             }
-
-            _current = item;
-            return true;
         }
 
         public async ValueTask DisposeAsync()
@@ -795,19 +846,25 @@ internal static class AsyncBridge
                 var handle = _asyncIter;
                 var needClose = _started && !_exhausted;
                 _asyncIter = IntPtr.Zero;
-                await Task.Run(() =>
+                try
                 {
-                    using var gil = new GilScope();
-
                     // Call aclose() so the generator's finally blocks and async context
                     // managers run even when the consumer breaks out early.
                     if (needClose)
                     {
-                        CloseAsyncGenerator(handle);
+                        await GetHost().RunAsync<object?>(() => CreateCloseCoroutine(handle), CancellationToken.None)
+                            .ConfigureAwait(false);
                     }
-
+                }
+                catch
+                {
+                    // Cleanup is best effort; disposal must still release the iterator.
+                }
+                finally
+                {
+                    using var gil = new GilScope();
                     NativeMethods.Py_DecRef(handle);
-                }).ConfigureAwait(false);
+                }
             }
         }
     }

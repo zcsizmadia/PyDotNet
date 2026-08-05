@@ -9,6 +9,47 @@ namespace PyDotNet.Tests.Integration;
 public sealed class CancellationTests
 {
     [Test]
+    public async Task CallAsync_CancellationRunsPythonFinallyBlock()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        interp.Execute("""
+            import asyncio
+            _pydotnet_cancel_started = False
+            _pydotnet_cancel_finally = False
+            async def _pydotnet_cancellable():
+                global _pydotnet_cancel_started, _pydotnet_cancel_finally
+                _pydotnet_cancel_started = True
+                try:
+                    await asyncio.sleep(60)
+                finally:
+                    _pydotnet_cancel_finally = True
+            """);
+
+        using var module = interp.ImportModule("__main__");
+        using var function = module.GetFunction("_pydotnet_cancellable");
+        using var cts = new CancellationTokenSource();
+        var operation = function.CallAsync([], cts.Token);
+
+        for (var i = 0; i < 100; i++)
+        {
+            using var started = interp.Evaluate("_pydotnet_cancel_started");
+            if (started.As<bool>())
+            {
+                break;
+            }
+
+            await Task.Delay(10);
+        }
+
+        cts.Cancel();
+        await Assert.That(async () => await operation).Throws<OperationCanceledException>();
+        using var finalized = interp.Evaluate("_pydotnet_cancel_finally");
+        await Assert.That(finalized.As<bool>()).IsTrue();
+    }
+
+    [Test]
     public async Task EvaluateAsync_AlreadyCancelledToken_ThrowsBeforeStart()
     {
         await PythonEnvironment.SkipIfUnavailableAsync();
