@@ -20,7 +20,7 @@ jobs:
       packages: write   # To push to GitHub Packages
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install .NET SDKs
         uses: actions/setup-dotnet@v5
