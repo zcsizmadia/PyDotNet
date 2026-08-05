@@ -17,7 +17,7 @@ namespace PyDotNet.Types;
 public sealed unsafe class DLPackTensor : IDisposable
 {
     private DLManagedTensor* _managed;
-    private bool _disposed;
+    private int _disposed;
 
     private DLPackTensor(DLManagedTensor* managed)
     {
@@ -160,7 +160,7 @@ public sealed unsafe class DLPackTensor : IDisposable
     public Span<T> AsSpan<T>()
         where T : unmanaged
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
         if (!IsOnCpu)
         {
@@ -513,12 +513,11 @@ public sealed unsafe class DLPackTensor : IDisposable
     /// </summary>
     public void Dispose()
     {
-        if (_disposed)
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
             return;
         }
 
-        _disposed = true;
         GC.SuppressFinalize(this);
 
         if (_managed is not null)

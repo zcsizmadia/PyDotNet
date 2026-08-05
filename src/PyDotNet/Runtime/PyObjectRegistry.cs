@@ -5,7 +5,7 @@ namespace PyDotNet.Runtime;
 
 /// <summary>
 /// Tracks all live <see cref="PyDotNet.Types.PyObject"/> instances so they can be
-/// released before <c>Py_Finalize()</c> is called.  Without this, any
+/// released during managed runtime shutdown. Without this, any
 /// <c>PyObject</c> whose finalizer runs after Python is torn down would call
 /// <c>Py_DecRef</c> on freed memory — undefined behaviour.
 /// </summary>
@@ -29,7 +29,7 @@ internal static class PyObjectRegistry
 
     /// <summary>
     /// Forces all still-alive Python objects to release their handles.
-    /// Must be called while the GIL is held and before <c>Py_Finalize()</c>.
+    /// Must be called while the GIL is held during managed runtime shutdown.
     /// </summary>
     internal static void ClearAll()
     {

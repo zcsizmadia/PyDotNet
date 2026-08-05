@@ -25,18 +25,18 @@ internal static class TypeConverter
     [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
     internal static IntPtr ToPython(object? value)
     {
-        return value switch
+        var result = value switch
         {
             null => GetNone(),
             bool b => NativeMethods.PyBool_FromLong(b ? 1L : 0L),
-            int i => NativeMethods.PyLong_FromLong(i),
+            int i => NativeMethods.PyLong_FromLongLong(i),
             long l => NativeMethods.PyLong_FromLongLong(l),
             uint ui => NativeMethods.PyLong_FromUnsignedLongLong(ui),
             ulong ul => NativeMethods.PyLong_FromUnsignedLongLong(ul),
-            short s => NativeMethods.PyLong_FromLong(s),
-            ushort us => NativeMethods.PyLong_FromLong(us),
-            byte b => NativeMethods.PyLong_FromLong(b),
-            sbyte sb => NativeMethods.PyLong_FromLong(sb),
+            short s => NativeMethods.PyLong_FromLongLong(s),
+            ushort us => NativeMethods.PyLong_FromLongLong(us),
+            byte b => NativeMethods.PyLong_FromLongLong(b),
+            sbyte sb => NativeMethods.PyLong_FromLongLong(sb),
             float f => NativeMethods.PyFloat_FromDouble(f),
             double d => NativeMethods.PyFloat_FromDouble(d),
             decimal dec => NativeMethods.PyFloat_FromDouble((double)dec),
@@ -55,6 +55,8 @@ internal static class TypeConverter
             IDictionary<string, object?> dict => ToDict(dict),
             _ => throw new PyInteropException($"Cannot convert .NET type '{value.GetType().FullName}' to Python."),
         };
+
+        return PyApi.NewReference(result, $"conversion of {value?.GetType().FullName ?? "null"}");
     }
 
     /// <summary>
@@ -64,14 +66,22 @@ internal static class TypeConverter
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static IntPtr ToTuple(IReadOnlyList<object?> args)
     {
-        var tuple = NativeMethods.PyTuple_New(args.Count);
-        for (var i = 0; i < args.Count; i++)
+        var tuple = PyApi.NewReference(NativeMethods.PyTuple_New(args.Count), "PyTuple_New");
+        try
         {
-            var item = ToPython(args[i]); // new reference
-            _ = NativeMethods.PyTuple_SetItem(tuple, i, item); // steals reference
-        }
+            for (var i = 0; i < args.Count; i++)
+            {
+                var item = PyApi.NewReference(ToPython(args[i]), "argument conversion");
+                PyApi.Status(NativeMethods.PyTuple_SetItem(tuple, i, item), "PyTuple_SetItem");
+            }
 
-        return tuple;
+            return tuple;
+        }
+        catch
+        {
+            NativeMethods.Py_DecRef(tuple);
+            throw;
+        }
     }
 
     /// <summary>
@@ -80,15 +90,29 @@ internal static class TypeConverter
     /// </summary>
     internal static IntPtr ToDict(IDictionary<string, object?> source)
     {
-        var dict = NativeMethods.PyDict_New();
-        foreach (var (key, val) in source)
+        var dict = PyApi.NewReference(NativeMethods.PyDict_New(), "PyDict_New");
+        try
         {
-            var pyVal = ToPython(val);
-            _ = NativeMethods.PyDict_SetItemString(dict, key, pyVal);
-            NativeMethods.Py_DecRef(pyVal);
-        }
+            foreach (var (key, val) in source)
+            {
+                var pyVal = PyApi.NewReference(ToPython(val), $"conversion for key '{key}'");
+                try
+                {
+                    PyApi.Status(NativeMethods.PyDict_SetItemString(dict, key, pyVal), "PyDict_SetItemString");
+                }
+                finally
+                {
+                    NativeMethods.Py_DecRef(pyVal);
+                }
+            }
 
-        return dict;
+            return dict;
+        }
+        catch
+        {
+            NativeMethods.Py_DecRef(dict);
+            throw;
+        }
     }
 
     // ── Python → .NET ─────────────────────────────────────────────────────
@@ -110,27 +134,27 @@ internal static class TypeConverter
 
         if (typeof(T) == typeof(bool))
         {
-            return (T)(object)(NativeMethods.PyObject_IsTrue(pyObj) != 0);
+            return (T)(object)PyApi.IsTrue(pyObj);
         }
 
         if (typeof(T) == typeof(int))
         {
-            return (T)(object)(int)NativeMethods.PyLong_AsLong(pyObj);
+            return (T)(object)checked((int)PyApi.Int64(pyObj));
         }
 
         if (typeof(T) == typeof(long))
         {
-            return (T)(object)NativeMethods.PyLong_AsLongLong(pyObj);
+            return (T)(object)PyApi.Int64(pyObj);
         }
 
         if (typeof(T) == typeof(double))
         {
-            return (T)(object)NativeMethods.PyFloat_AsDouble(pyObj);
+            return (T)(object)PyApi.Double(pyObj);
         }
 
         if (typeof(T) == typeof(float))
         {
-            return (T)(object)(float)NativeMethods.PyFloat_AsDouble(pyObj);
+            return (T)(object)checked((float)PyApi.Double(pyObj));
         }
 
         if (typeof(T) == typeof(string))
@@ -189,32 +213,32 @@ internal static class TypeConverter
 
         if (targetType == typeof(bool))
         {
-            return NativeMethods.PyObject_IsTrue(pyObj) != 0;
+            return PyApi.IsTrue(pyObj);
         }
 
         if (targetType == typeof(int))
         {
-            return (int)NativeMethods.PyLong_AsLong(pyObj);
+            return checked((int)PyApi.Int64(pyObj));
         }
 
         if (targetType == typeof(long))
         {
-            return NativeMethods.PyLong_AsLongLong(pyObj);
+            return PyApi.Int64(pyObj);
         }
 
         if (targetType == typeof(ulong))
         {
-            return NativeMethods.PyLong_AsUnsignedLongLong(pyObj);
+            return PyApi.UInt64(pyObj);
         }
 
         if (targetType == typeof(double))
         {
-            return NativeMethods.PyFloat_AsDouble(pyObj);
+            return PyApi.Double(pyObj);
         }
 
         if (targetType == typeof(float))
         {
-            return (float)NativeMethods.PyFloat_AsDouble(pyObj);
+            return checked((float)PyApi.Double(pyObj));
         }
 
         if (targetType == typeof(byte[]))
@@ -521,7 +545,7 @@ internal static class TypeConverter
         NativeMethods.PyErr_Clear();
 
         // Try integer
-        var longVal = NativeMethods.PyLong_AsLong(pyObj);
+        var longVal = NativeMethods.PyLong_AsLongLong(pyObj);
         if (NativeMethods.PyErr_Occurred() == IntPtr.Zero)
         {
             return longVal;
@@ -594,7 +618,7 @@ internal static class TypeConverter
         }
         try
         {
-            return (int)NativeMethods.PyLong_AsLong(attrObj);
+            return checked((int)PyApi.Int64(attrObj));
         }
         finally { NativeMethods.Py_DecRef(attrObj); }
     }

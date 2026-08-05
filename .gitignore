@@ -487,3 +487,6 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Microsoft.Testing.Platform first-run sentinels
+/Microsoft/TestingPlatform/

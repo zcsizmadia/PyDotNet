@@ -8,6 +8,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/PyDotNet.DataFrames.Tests/PyDotNet.DataFrames.Tests.csproj" />
+    <Project Path="tests/PyDotNet.Lifecycle.Tests/PyDotNet.Lifecycle.Tests.csproj" />
     <Project Path="tests/PyDotNet.Matplotlib.Tests/PyDotNet.Matplotlib.Tests.csproj" />
     <Project Path="tests/PyDotNet.NumPy.Tests/PyDotNet.NumPy.Tests.csproj" />
     <Project Path="tests/PyDotNet.Snippets.Tests/PyDotNet.Snippets.Tests.csproj" />

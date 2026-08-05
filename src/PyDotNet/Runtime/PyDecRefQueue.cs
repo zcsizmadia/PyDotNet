@@ -19,16 +19,15 @@ namespace PyDotNet.Runtime;
 /// thread acquires the GIL, releases the handle, then releases the GIL.
 /// </para>
 /// <para>
-/// During <see cref="PyRuntime.Shutdown()"/>, <see cref="StopAndDrain"/> is called while
-/// the GIL is already held by the shutdown thread, flushing any remaining handles before
-/// <c>Py_Finalize</c> runs.
+/// During <see cref="PyRuntime.Shutdown()"/>, <see cref="Drain"/> is called while
+/// the GIL is held by the shutdown thread. The worker remains alive for late finalizers
+/// because CPython remains loaded for the process lifetime.
 /// </para>
 /// </remarks>
 internal static class PyDecRefQueue
 {
     private static readonly ConcurrentQueue<IntPtr> _pending = new();
     private static readonly SemaphoreSlim _signal = new(0, int.MaxValue);
-    private static volatile bool _stopped;
 
     static PyDecRefQueue()
     {
@@ -69,14 +68,11 @@ internal static class PyDecRefQueue
 
     /// <summary>
     /// Drains all pending handles synchronously (GIL must be held by the caller),
-    /// then signals the background thread to exit.
+    /// while the caller holds the GIL.
     /// Called by <see cref="PyRuntime.Shutdown"/> inside the GIL-held window.
     /// </summary>
-    internal static void StopAndDrain()
+    internal static void Drain()
     {
-        // Mark as stopped so background thread exits cleanly.
-        _stopped = true;
-
         // Drain everything that arrived before shutdown — GIL is held by our caller.
         while (_pending.TryDequeue(out var h))
         {
@@ -86,17 +82,6 @@ internal static class PyDecRefQueue
             }
         }
 
-        // Wake the background thread so it can observe _stopped and exit.
-        try
-        {
-            _signal.Release();
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-        catch (SemaphoreFullException)
-        {
-        }
     }
 
     // ── Background drain loop ─────────────────────────────────────────────
@@ -107,17 +92,17 @@ internal static class PyDecRefQueue
         {
             _signal.Wait();
 
-            if (_stopped)
-            {
-                break;
-            }
-
             DrainBatchWithGil();
         }
     }
 
     private static void DrainBatchWithGil()
     {
+        if (!PyRuntime.IsPythonAlive)
+        {
+            return;
+        }
+
         // Collect all currently-pending handles before acquiring the GIL, so we
         // hold it for the shortest possible time.
         var batch = new List<IntPtr>(8);
@@ -129,7 +114,7 @@ internal static class PyDecRefQueue
             }
         }
 
-        if (batch.Count == 0 || !PyRuntime.IsInitialized)
+        if (batch.Count == 0)
         {
             return;
         }

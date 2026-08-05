@@ -1,3 +1,4 @@
+using PyDotNet.Exceptions;
 using PyDotNet.Runtime;
 using PyDotNet.Tests.Infrastructure;
 using PyDotNet.Types;
@@ -370,5 +371,41 @@ public sealed class TypeMarshalingTests
 
         using var result = absFn.Call(-17);
         await Assert.That(result.As<int>()).IsEqualTo(17);
+    }
+
+    [Test]
+    public async Task Int32_Overflow_ThrowsInsteadOfReturningSentinel()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        using var value = interp.Evaluate("2147483648");
+
+        await Assert.That(() => value.As<int>()).Throws<OverflowException>();
+    }
+
+    [Test]
+    public async Task Int64_Overflow_PropagatesPythonOverflowError()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        using var value = interp.Evaluate("10 ** 100");
+
+        await Assert.That(() => value.As<long>())
+            .Throws<PythonException>();
+    }
+
+    [Test]
+    public async Task TruthConversion_Error_PropagatesPythonException()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        interp.Execute("class BadBool:\n    def __bool__(self):\n        raise RuntimeError('boom')\nbad_bool = BadBool()");
+        using var value = interp.Evaluate("bad_bool");
+
+        await Assert.That(() => value.As<bool>())
+            .Throws<PythonException>();
     }
 }
