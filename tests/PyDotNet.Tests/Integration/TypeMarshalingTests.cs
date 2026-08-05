@@ -433,4 +433,36 @@ public sealed class TypeMarshalingTests
         await Assert.That(() => value.As<double>()).Throws<PythonException>();
     }
 
+    [Test]
+    public async Task VectorCall_SupportsZeroAndManyArguments()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        interp.Execute("def no_args(): return 42\ndef count_args(*args): return len(args)");
+        using var main = interp.ImportModule("__main__");
+        using var noArgs = main.GetFunction("no_args");
+        using var countArgs = main.GetFunction("count_args");
+
+        await Assert.That(noArgs.Call<int>()).IsEqualTo(42);
+        await Assert.That(countArgs.Call<int>(Enumerable.Range(0, 32).Cast<object?>().ToArray()))
+            .IsEqualTo(32);
+    }
+
+    [Test]
+    public async Task VectorCall_ConversionFailure_DoesNotPoisonSubsequentCalls()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        interp.Execute("def count_args(*args): return len(args)");
+        using var main = interp.ImportModule("__main__");
+        using var countArgs = main.GetFunction("count_args");
+        using var disposed = interp.Evaluate("object()");
+        disposed.Dispose();
+
+        await Assert.That(() => countArgs.Call(1, disposed, 3)).Throws<ObjectDisposedException>();
+        await Assert.That(countArgs.Call<int>(1, 2, 3)).IsEqualTo(3);
+    }
+
 }

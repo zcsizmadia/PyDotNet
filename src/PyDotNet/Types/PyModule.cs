@@ -2,6 +2,7 @@ using PyDotNet.Async;
 using PyDotNet.Exceptions;
 using PyDotNet.Marshaling;
 using PyDotNet.Native;
+using PyDotNet.Runtime;
 
 namespace PyDotNet.Types;
 
@@ -94,12 +95,32 @@ public sealed class PyModule : PyObject
         }
     }
 
-    internal static PyObject CallInternal(IntPtr func, object?[] args)
+    internal static unsafe PyObject CallInternal(IntPtr func, object?[] args)
     {
-        var argTuple = TypeConverter.ToTuple(args);
+        using var operation = PyRuntimeDiagnostics.StartOperation("call");
+        // CPython vectorcall avoids allocating and populating an intermediate tuple.
+        // Most calls are small enough to keep the pointer array on the stack.
+        Span<IntPtr> pyArgs = args.Length <= 16
+            ? stackalloc IntPtr[args.Length]
+            : new IntPtr[args.Length];
+        var converted = 0;
         try
         {
-            var result = NativeMethods.PyObject_CallObject(func, argTuple);
+            for (; converted < args.Length; converted++)
+            {
+                pyArgs[converted] = TypeConverter.ToPython(args[converted]);
+            }
+
+            IntPtr result;
+            fixed (IntPtr* argsPtr = pyArgs)
+            {
+                result = NativeMethods.PyObject_Vectorcall(
+                    func,
+                    argsPtr,
+                    (nuint)pyArgs.Length,
+                    IntPtr.Zero);
+            }
+
             if (result == IntPtr.Zero)
             {
                 PythonException.ThrowIfPythonErrorOccurred();
@@ -108,9 +129,17 @@ public sealed class PyModule : PyObject
 
             return PyObject.FromNewReference(result);
         }
+        catch (Exception ex)
+        {
+            operation.Fail(ex);
+            throw;
+        }
         finally
         {
-            NativeMethods.Py_DecRef(argTuple);
+            for (var i = 0; i < converted; i++)
+            {
+                NativeMethods.Py_DecRef(pyArgs[i]);
+            }
         }
     }
 
@@ -119,6 +148,7 @@ public sealed class PyModule : PyObject
         object?[] args,
         IDictionary<string, object?> kwargs)
     {
+        using var operation = PyRuntimeDiagnostics.StartOperation("call");
         var argTuple = TypeConverter.ToTuple(args);
         var kwDict = TypeConverter.ToDict(kwargs);
         try
@@ -131,6 +161,11 @@ public sealed class PyModule : PyObject
             }
 
             return PyObject.FromNewReference(result);
+        }
+        catch (Exception ex)
+        {
+            operation.Fail(ex);
+            throw;
         }
         finally
         {

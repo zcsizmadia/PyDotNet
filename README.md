@@ -1346,6 +1346,12 @@ Each plugin wraps a focused subset of the underlying Python library's API. The t
 | **PyDotNet.Torch** | ~35 | ~700 | Autograd (`requires_grad`, `grad`, `backward`, `detach`); device movement (`to`, `cpu`, `cuda`); arithmetic (`+`, `-`, `*`, `/`, `@`, unary `-`); shape (`reshape`, `view`, `transpose`, `.T`, `squeeze`, `unsqueeze`); reductions (`mean`, `sum`); element-wise math (`abs`, `exp`, `log`, `sqrt`); activations (`relu`, `sigmoid`, `tanh`, `softmax`); data access (`item`, DLPack, buffer protocol); factory (`zeros`, `ones`, `empty`, `from_dlpack`) | `clone`, `contiguous`, `permute`, `cat`/`stack`, `max`/`min`, `norm`, `clamp`, index/slice access, in-place variants |
 | **PyDotNet.Matplotlib** | ~15 | ~500 | Figure/axes creation; line (`plot`), scatter, bar, histogram; title/xlabel/ylabel; legend; grid; axis limits (`set_xlim`, `set_ylim`); PNG/SVG/PDF rendering via headless Agg backend | Subplots grid (`subplots(m,n)`), twin axes, log scale, color bars, 3-D plots, `imshow`, animation, custom tickers |
 
+## Performance and observability
+
+Positional Python calls use CPython's vectorcall protocol to avoid temporary tuple allocation, while live wrapper tracking uses weak-key ownership records. BenchmarkDotNet scenarios cover calls, marshaling, zero-copy buffers, and async execution; see [Performance](docs/performance.md).
+
+PyDotNet also publishes opt-in OpenTelemetry-compatible activities and metrics through `PyRuntimeDiagnostics`. Traces cover imports, execution, evaluation, and calls; metrics cover latency, errors, operations, runtime transitions, and active interpreters/objects. See [Observability](docs/observability.md) for instrument names and configuration.
+
 ## Roadmap
 
 Items below are planned or under active investigation. Rough priority order — earlier items are closer to being started.

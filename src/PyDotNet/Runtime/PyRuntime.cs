@@ -90,6 +90,7 @@ public static class PyRuntime
             {
                 InitializeCore(options);
                 Volatile.Write(ref _state, (int)PyRuntimeState.Running);
+                PyRuntimeDiagnostics.RuntimeInitialized();
             }
             catch
             {
@@ -133,12 +134,12 @@ public static class PyRuntime
                 // transfer ensures racing disposal cannot release a reference twice.
                 PyDecRefQueue.Drain();
                 PyObjectRegistry.ClearAll();
+                AsyncBridge.ReleaseAsyncioCache();
             }
             finally
             {
                 NativeMethods.PyGILState_Release(gilState);
                 TypeConverter.ResetNoneCache();
-                AsyncBridge.ResetAsyncioCache();
                 _mainThreadState = IntPtr.Zero;
             }
 
@@ -157,6 +158,7 @@ public static class PyRuntime
             // Extension modules retain process-global state and executable pointers
             // into libpython, so unloading without finalizing would be unsafe.
             Volatile.Write(ref _state, (int)PyRuntimeState.Stopped);
+            PyRuntimeDiagnostics.RuntimeShutdown();
             _logger.ShutDown();
         }
     }
@@ -257,6 +259,16 @@ public static class PyRuntime
             ? [.. options.AdditionalSysPaths, .. autoSitePaths]
             : options.AdditionalSysPaths;
         AppendSysPaths(allAdditionalPaths);
+
+        // Import asyncio before releasing the startup GIL. Python 3.14's expanded
+        // asyncio dependency graph makes concurrent first imports more likely to
+        // observe partially initialized transitive modules (notably typing and
+        // dataclasses). Warming the module here also removes first-call latency from
+        // the async bridge.
+        using (var gil = new GilScope())
+        {
+            AsyncBridge.WarmUp();
+        }
 
         if (initializedHere && options.ReleaseGilAfterInit)
         {

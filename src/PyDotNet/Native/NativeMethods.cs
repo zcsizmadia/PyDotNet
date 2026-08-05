@@ -100,6 +100,13 @@ internal static partial class NativeMethods
     internal static extern IntPtr PyObject_Call(IntPtr callable, IntPtr args, IntPtr kwargs);
 
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern unsafe IntPtr PyObject_Vectorcall(
+        IntPtr callable,
+        IntPtr* args,
+        nuint nargsf,
+        IntPtr kwnames);
+
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern IntPtr PyObject_Str(IntPtr obj);
 
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]

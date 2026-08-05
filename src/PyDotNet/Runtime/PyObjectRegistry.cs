@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 
 namespace PyDotNet.Runtime;
@@ -11,21 +10,26 @@ namespace PyDotNet.Runtime;
 /// </summary>
 internal static class PyObjectRegistry
 {
-    private static readonly ConcurrentDictionary<long, WeakReference<Types.PyObject>> _alive = new();
-    private static long _counter;
+    private static readonly ConditionalWeakTable<Types.PyObject, Registration> _alive = new();
+    private static readonly Registration _registration = new();
 
-    /// <summary>Registers a newly-created <see cref="Types.PyObject"/> and returns its registry id.</summary>
+    /// <summary>Registers a newly-created <see cref="Types.PyObject"/> without keeping it alive.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static long Add(Types.PyObject obj)
+    internal static void Add(Types.PyObject obj)
     {
-        var id = Interlocked.Increment(ref _counter);
-        _alive.TryAdd(id, new WeakReference<Types.PyObject>(obj));
-        return id;
+        _alive.Add(obj, _registration);
+        PyRuntimeDiagnostics.ObjectCreated();
     }
 
     /// <summary>Removes a disposed <see cref="Types.PyObject"/> from the registry.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static void Remove(long id) => _alive.TryRemove(id, out _);
+    internal static void Remove(Types.PyObject obj)
+    {
+        if (_alive.Remove(obj))
+        {
+            PyRuntimeDiagnostics.ObjectDisposed();
+        }
+    }
 
     /// <summary>
     /// Forces all still-alive Python objects to release their handles.
@@ -33,14 +37,12 @@ internal static class PyObjectRegistry
     /// </summary>
     internal static void ClearAll()
     {
-        foreach (var (id, weakRef) in _alive)
+        foreach (var (obj, _) in _alive)
         {
-            if (weakRef.TryGetTarget(out var obj))
-            {
-                obj.ForceReleaseHandle();
-            }
-
-            _alive.TryRemove(id, out _);
+            obj.ForceReleaseHandle();
+            Remove(obj);
         }
     }
+
+    private sealed class Registration;
 }
