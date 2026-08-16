@@ -19,6 +19,6 @@
     </PackageVersion>
     <PackageVersion Include="TUnit" Version="1.63.0" />
     <!-- Logging abstractions used in the main library -->
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.11" />
   </ItemGroup>
 </Project>
