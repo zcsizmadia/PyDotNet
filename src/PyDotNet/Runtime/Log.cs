@@ -24,6 +24,21 @@ internal static partial class Log
     [LoggerMessage(Level = LogLevel.Debug, Message = "PyDotNet: appended {Count} path(s) to sys.path.")]
     internal static partial void AppendedSysPaths(this ILogger logger, int count);
 
+    [LoggerMessage(Level = LogLevel.Debug, Message = "PyDotNet: program name set to '{ProgramName}'.")]
+    internal static partial void ProgramNameApplied(this ILogger logger, string programName);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "PyDotNet: Python home set to '{PythonHome}'.")]
+    internal static partial void PythonHomeApplied(this ILogger logger, string pythonHome);
+
+    [LoggerMessage(Level = LogLevel.Debug,
+        Message = "PyDotNet: isolation applied (Isolated={Isolated}, UseEnvironment={UseEnvironment}, UserSiteDirectory={UserSiteDirectory}).")]
+    internal static partial void IsolationApplied(this ILogger logger, bool isolated, bool? useEnvironment, bool? userSiteDirectory);
+
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "PyDotNet: virtual environment '{VirtualEnvironmentPath}' was created from base installation '{Home}', " +
+                  "which does not appear to match the loaded Python library '{LibraryPath}'. Imports from this environment may fail.")]
+    internal static partial void VirtualEnvironmentBaseMismatch(this ILogger logger, string virtualEnvironmentPath, string home, string libraryPath);
+
     [LoggerMessage(Level = LogLevel.Debug, Message = "PyDotNet: shutting down Python runtime.")]
     internal static partial void ShuttingDown(this ILogger logger);
 
