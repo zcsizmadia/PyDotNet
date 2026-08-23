@@ -25,6 +25,12 @@ public static class PyRuntime
     private static ILogger _logger = NullLogger.Instance;
     private static IntPtr _nativeLibraryHandle;
     private static string? _loadedLibraryPath;
+    // The program name CPython was initialized with. Retained for the lifetime of the
+    // process because Py_Finalize() is never called, so it can never be re-applied.
+    private static string? _appliedProgramName;
+    // Signature of the interpreter configuration CPython was initialized with, so that an
+    // idempotent repeat Initialize() can be told from a request to reconfigure.
+    private static string? _appliedConfigurationSignature;
     /// <summary>Gets the current managed runtime lifecycle state.</summary>
     public static PyRuntimeState State => (PyRuntimeState)Volatile.Read(ref _state);
 
@@ -69,6 +75,7 @@ public static class PyRuntime
 
         if (State == PyRuntimeState.Running)
         {
+            EnsureInterpreterConfigurationUnchanged(options);
             return;
         }
 
@@ -76,6 +83,7 @@ public static class PyRuntime
         {
             if (State == PyRuntimeState.Running)
             {
+                EnsureInterpreterConfigurationUnchanged(options);
                 return;
             }
 
@@ -245,11 +253,24 @@ public static class PyRuntime
         var initializedHere = NativeMethods.Py_IsInitialized() == 0;
         if (initializedHere)
         {
+            ApplyInterpreterConfiguration(options);
             NativeMethods.Py_Initialize();
             _logger.PyInitializeCalled();
         }
         else
         {
+            // CPython reads program name, home, and the isolation flags only during
+            // Py_Initialize(). Once another component has initialized it, the requested
+            // settings can never take effect, and silently continuing would leave the
+            // caller importing from an interpreter they did not configure.
+            if (options.HasInterpreterConfiguration)
+            {
+                throw new PyRuntimeException(
+                    "CPython was already initialized by another component, so ProgramName, " +
+                    "PythonHome, VirtualEnvironmentPath, and Isolation cannot be applied. " +
+                    "These settings are only honoured when PyDotNet initializes CPython itself.");
+            }
+
             _logger.PythonAlreadyInitialized();
         }
 
@@ -259,7 +280,14 @@ public static class PyRuntime
         // executable), so site.py may not add the site-packages of the actual Python
         // installation.  Append site-packages discovered from the shared library path
         // so that user-installed packages (numpy, pandas, etc.) are importable.
-        var autoSitePaths = DeriveDefaultSysPaths(libraryPath);
+        //
+        // This heuristic is skipped once the caller configures the interpreter explicitly.
+        // It resolves site-packages from the *base* installation, which against a
+        // configured virtual environment would re-introduce exactly the packages the
+        // environment exists to shadow — and would defeat a requested isolation setting.
+        List<string> autoSitePaths = options.HasInterpreterConfiguration
+            ? []
+            : DeriveDefaultSysPaths(libraryPath);
         var allAdditionalPaths = autoSitePaths.Count > 0
             ? [.. options.AdditionalSysPaths, .. autoSitePaths]
             : options.AdditionalSysPaths;
@@ -284,6 +312,149 @@ public static class PyRuntime
             // Release the GIL so .NET thread-pool threads can acquire it freely.
             _mainThreadState = NativeMethods.PyEval_SaveThread();
             _logger.GilReleasedAfterInit();
+        }
+    }
+
+    /// <summary>
+    /// Guards the idempotent <c>Initialize</c> fast path. Repeating a call with the same
+    /// interpreter settings is safe and does nothing; asking for different ones cannot be
+    /// honoured, because CPython consumed these values during its one and only
+    /// initialization. Returning silently there would leave the caller believing they had
+    /// reconfigured an interpreter that never changed.
+    /// </summary>
+    private static void EnsureInterpreterConfigurationUnchanged(PyRuntimeOptions options)
+    {
+        if (!options.HasInterpreterConfiguration)
+        {
+            return;
+        }
+
+        var requested = options.InterpreterConfigurationSignature();
+        if (string.Equals(requested, _appliedConfigurationSignature, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        throw new PyRuntimeException(
+            "The PyDotNet runtime is already running with a different interpreter configuration. " +
+            "ProgramName, PythonHome, VirtualEnvironmentPath, and Isolation are read by CPython " +
+            "during Py_Initialize() and cannot be changed afterwards in the same process.");
+    }
+
+    /// <summary>
+    /// Applies the caller's pre-initialization CPython settings. Must run after the shared
+    /// library is loaded and before <c>Py_Initialize()</c>.
+    /// <para>
+    /// CPython reads these values exactly once, during initialization. Because PyDotNet
+    /// deliberately never calls <c>Py_Finalize()</c> (see <see cref="Shutdown"/>), a
+    /// process cannot re-apply them: an <c>Initialize</c> → <c>Shutdown</c> →
+    /// <c>Initialize</c> cycle re-attaches to the interpreter configured by the first call.
+    /// Conflicting settings are therefore rejected rather than silently ignored.
+    /// </para>
+    /// </summary>
+    private static void ApplyInterpreterConfiguration(PyRuntimeOptions options)
+    {
+        _appliedConfigurationSignature = options.HasInterpreterConfiguration
+            ? options.InterpreterConfigurationSignature()
+            : null;
+
+        if (!options.HasInterpreterConfiguration)
+        {
+            return;
+        }
+
+        var programName = options.ResolveProgramName();
+        if (programName is not null)
+        {
+            programName = Path.GetFullPath(programName);
+
+            if (_appliedProgramName is not null &&
+                !string.Equals(_appliedProgramName, programName, PathComparison))
+            {
+                throw new PyRuntimeException(
+                    $"CPython was already configured with program name '{_appliedProgramName}' and " +
+                    $"cannot be reconfigured to '{programName}' in the same process. The program " +
+                    "name is read once, during Py_Initialize().");
+            }
+
+            if (options.VirtualEnvironmentPath is not null)
+            {
+                WarnOnVirtualEnvironmentMismatch(options.VirtualEnvironmentPath);
+            }
+
+            PythonInitConfig.SetProgramName(_nativeLibraryHandle, programName);
+            _appliedProgramName = programName;
+            _logger.ProgramNameApplied(programName);
+        }
+
+        if (options.PythonHome is not null)
+        {
+            var pythonHome = Path.GetFullPath(options.PythonHome);
+            PythonInitConfig.SetPythonHome(_nativeLibraryHandle, pythonHome);
+            _logger.PythonHomeApplied(pythonHome);
+        }
+
+        ApplyIsolation(options.Isolation);
+    }
+
+    /// <summary>
+    /// Writes CPython's exported isolation globals. <c>Py_IsolatedFlag</c> alone implies
+    /// the other two, so they are written only when explicitly requested.
+    /// </summary>
+    private static void ApplyIsolation(PyIsolationOptions? isolation)
+    {
+        if (isolation is null)
+        {
+            return;
+        }
+
+        if (isolation.Isolated)
+        {
+            PythonInitConfig.SetFlag(_nativeLibraryHandle, "Py_IsolatedFlag", 1,
+                nameof(PyIsolationOptions.Isolated));
+        }
+
+        if (isolation.UseEnvironment is { } useEnvironment)
+        {
+            PythonInitConfig.SetFlag(_nativeLibraryHandle, "Py_IgnoreEnvironmentFlag",
+                useEnvironment ? 0 : 1, nameof(PyIsolationOptions.UseEnvironment));
+        }
+
+        if (isolation.UserSiteDirectory is { } userSiteDirectory)
+        {
+            PythonInitConfig.SetFlag(_nativeLibraryHandle, "Py_NoUserSiteDirectory",
+                userSiteDirectory ? 0 : 1, nameof(PyIsolationOptions.UserSiteDirectory));
+        }
+
+        _logger.IsolationApplied(isolation.Isolated, isolation.UseEnvironment, isolation.UserSiteDirectory);
+    }
+
+    /// <summary>
+    /// Warns when a virtual environment was created from a different base installation
+    /// than the shared library PyDotNet loaded. The mismatch is not fatal — layouts vary
+    /// and the paths may be equivalent — but it is the usual cause of a virtual
+    /// environment that initializes cleanly yet cannot import its own packages.
+    /// </summary>
+    private static void WarnOnVirtualEnvironmentMismatch(string virtualEnvironmentPath)
+    {
+        var home = VirtualEnvironment.TryReadHome(virtualEnvironmentPath);
+        if (home is null || _loadedLibraryPath is null)
+        {
+            return;
+        }
+
+        // pyvenv.cfg's 'home' is the directory holding the base interpreter; the shared
+        // library normally lives in that directory or in a sibling of it.
+        var libraryDirectory = Path.GetDirectoryName(_loadedLibraryPath);
+        if (libraryDirectory is null)
+        {
+            return;
+        }
+
+        if (!libraryDirectory.StartsWith(home, PathComparison) &&
+            !home.StartsWith(libraryDirectory, PathComparison))
+        {
+            _logger.VirtualEnvironmentBaseMismatch(virtualEnvironmentPath, home, _loadedLibraryPath);
         }
     }
 

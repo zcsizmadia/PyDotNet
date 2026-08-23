@@ -45,6 +45,8 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
   - [PyModule async methods](#pymodule-async-methods)
   - [EvaluateAsync](#evaluateasync)
 - [Configuration](#configuration)
+  - [Virtual environments](#virtual-environments)
+  - [Isolation](#isolation)
 - [Exception handling](#exception-handling)
 - [Thread safety and the GIL](#thread-safety-and-the-gil)
 - [Local development](#local-development)
@@ -1140,6 +1142,34 @@ PyRuntime.Initialize(new PyRuntimeOptions
 });
 ```
 
+### Virtual environments
+
+Embedded Python takes `argv[0]` from the .NET host executable, so packages installed into a virtual environment are not importable by default. Point PyDotNet at the environment root to activate it properly:
+
+```csharp
+PyRuntime.Initialize(new PyRuntimeOptions
+{
+    VirtualEnvironmentPath = "/srv/myapp/.venv",
+});
+```
+
+This sets CPython's program name to the environment's interpreter, so `sys.prefix`, `sys.executable`, and `sys.path` are all configured for the environment — not merely extended. Use `ProgramName` directly to target an interpreter that is not a virtual environment, and `PythonHome` when the standard library cannot be found relative to it.
+
+### Isolation
+
+Insulate the interpreter from the surrounding environment so that the host application, rather than the machine, controls what Python can see:
+
+```csharp
+PyRuntime.Initialize(new PyRuntimeOptions
+{
+    Isolation = PyIsolationOptions.Full,   // equivalent to python -I
+});
+```
+
+Finer-grained control is available via `UseEnvironment` (ignore `PYTHON*` variables, `-E`) and `UserSiteDirectory` (skip the per-user `site-packages` directory, `-s`).
+
+> These settings are read by CPython during initialization and apply once per process. See **[Virtual environments and isolation](docs/virtual-environments.md)** for the full reference, constraints, and troubleshooting.
+
 ### Environment variable
 
 Set `PYDOTNET_PYTHON_LIBRARY` to the full path of the Python shared library to bypass auto-discovery entirely:
@@ -1285,6 +1315,14 @@ dotnet run --project samples/PyDotNet.Sample.MemoryView
 # GPU: CuPy matrix multiply, nvmath-python FFT, DLPack metadata, C#→GPU→C# zero-copy.
 # Falls back to NumPy automatically when no CUDA GPU is available.
 dotnet run --project samples/PyDotNet.Sample.Gpu
+
+# Virtual environment: import a package that exists only inside a venv.
+# Creates a throwaway environment, so it is self-contained.
+dotnet run --project samples/PyDotNet.Sample.VirtualEnvironment
+
+# Isolation: compare sys.flags under default, -I, -s, and -E equivalents.
+# Runs each configuration in its own process, since CPython applies them once.
+dotnet run --project samples/PyDotNet.Sample.Isolation
 ```
 
 ### Benchmarks
