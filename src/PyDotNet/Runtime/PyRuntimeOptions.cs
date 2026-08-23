@@ -21,7 +21,14 @@ public sealed class PyRuntimeOptions
     }
 
     /// <summary>
-    /// Optional <c>sys.path</c> entries to prepend before any Python code runs.
+    /// Optional entries added to <c>sys.path</c> before any Python code runs.
+    /// <para>
+    /// Entries are <b>appended</b>, so they are searched after the interpreter's own
+    /// paths. They extend the search path; they do not shadow a module that is already
+    /// importable. To take precedence over an installed package, use
+    /// <see cref="VirtualEnvironmentPath"/> or <see cref="ProgramName"/> to select an
+    /// interpreter where that package resolves as you intend.
+    /// </para>
     /// </summary>
     public IReadOnlyList<string> AdditionalSysPaths { get; init; } = Array.Empty<string>();
 
@@ -89,10 +96,24 @@ public sealed class PyRuntimeOptions
     /// </para>
     /// </summary>
     internal bool HasInterpreterConfiguration =>
+        HasInterpreterPathConfiguration ||
+        Isolation is not null;
+
+    /// <summary>
+    /// Gets a value indicating whether the caller has taken over the interpreter's own
+    /// path resolution, by supplying a program name, a virtual environment, or a home.
+    /// <para>
+    /// This is deliberately narrower than <see cref="HasInterpreterConfiguration"/>.
+    /// Isolation changes what CPython is permitted to read from the environment; it does
+    /// not change how CPython locates its own installation, so an isolated interpreter
+    /// with no program name still resolves paths from the .NET host executable and still
+    /// needs the <c>site-packages</c> fallback.
+    /// </para>
+    /// </summary>
+    internal bool HasInterpreterPathConfiguration =>
         ProgramName is not null ||
         PythonHome is not null ||
-        VirtualEnvironmentPath is not null ||
-        Isolation is not null;
+        VirtualEnvironmentPath is not null;
 
     /// <summary>
     /// Gets the program name to hand to CPython: <see cref="ProgramName"/> when set,

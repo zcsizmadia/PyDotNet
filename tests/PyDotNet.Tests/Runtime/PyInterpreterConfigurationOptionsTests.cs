@@ -156,6 +156,59 @@ public sealed class PyInterpreterConfigurationOptionsTests : IDisposable
             .WithMessageContaining("PythonHome");
     }
 
+    // ── Path configuration vs. isolation ─────────────────────────────────────
+    //
+    // These two predicates must stay distinct. The site-packages fallback is suppressed
+    // only when the caller has taken over path resolution. Isolation changes what CPython
+    // may read from the environment, not how it locates its own installation, so an
+    // isolated interpreter with no program name still needs that fallback — and
+    // suppressing it would make PyDotNet stricter than `python -I`, which keeps the main
+    // site-packages directory.
+
+    [Test]
+    public async Task IsolationOnly_DoesNotCountAsPathConfiguration()
+    {
+        var options = new PyRuntimeOptions { Isolation = PyIsolationOptions.Full };
+
+        await Assert.That(options.HasInterpreterConfiguration).IsTrue();
+        await Assert.That(options.HasInterpreterPathConfiguration).IsFalse();
+    }
+
+    [Test]
+    public async Task ProgramName_CountsAsPathConfiguration()
+    {
+        var options = new PyRuntimeOptions { ProgramName = CreateFile(Path.Combine(_root, "python")) };
+
+        await Assert.That(options.HasInterpreterPathConfiguration).IsTrue();
+    }
+
+    [Test]
+    public async Task VirtualEnvironmentPath_CountsAsPathConfiguration()
+    {
+        CreateVirtualEnvironment(withInterpreter: true);
+        var options = new PyRuntimeOptions { VirtualEnvironmentPath = _root };
+
+        await Assert.That(options.HasInterpreterPathConfiguration).IsTrue();
+    }
+
+    [Test]
+    public async Task PythonHome_CountsAsPathConfiguration()
+    {
+        Directory.CreateDirectory(_root);
+        var options = new PyRuntimeOptions { PythonHome = _root };
+
+        await Assert.That(options.HasInterpreterPathConfiguration).IsTrue();
+    }
+
+    [Test]
+    public async Task DefaultOptions_HaveNoPathConfiguration()
+    {
+        var options = new PyRuntimeOptions();
+
+        await Assert.That(options.HasInterpreterConfiguration).IsFalse();
+        await Assert.That(options.HasInterpreterPathConfiguration).IsFalse();
+    }
+
     // ── Isolation ────────────────────────────────────────────────────────────
 
     [Test]

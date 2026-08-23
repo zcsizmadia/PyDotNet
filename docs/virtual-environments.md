@@ -190,8 +190,25 @@ that exception, the path is wrong; the alternative was an undiagnosable runtime 
 **`ModuleNotFoundError: No module named 'encodings'`.** The standard library could not be
 located. Usually the virtual environment was created by a different Python installation
 than the shared library PyDotNet loaded. Compare `home` in the environment's `pyvenv.cfg`
-against the loaded library — PyDotNet logs a warning when they appear to disagree. Set
-`PYDOTNET_PYTHON_LIBRARY` to the matching library, or recreate the environment.
+against the loaded library, then set `PYDOTNET_PYTHON_LIBRARY` to the matching library or
+recreate the environment.
+
+PyDotNet detects this mismatch and logs a warning — but like every PyDotNet diagnostic it
+goes to the configured `ILogger`, and the default discards everything. **The absence of a
+warning does not mean the paths agree**; it usually means no logger was attached. Wire one
+up before `Initialize` to see it:
+
+```csharp
+using var loggerFactory = LoggerFactory.Create(builder =>
+    builder.AddConsole().SetMinimumLevel(LogLevel.Warning));
+
+PyRuntime.SetLogger(loggerFactory.CreateLogger("PyDotNet"));
+PyRuntime.Initialize(new PyRuntimeOptions { VirtualEnvironmentPath = "/srv/myapp/.venv" });
+```
+
+The check is a path comparison and is deliberately advisory rather than fatal: layouts vary
+enough — symlinks, framework builds, multiarch prefixes — that failing initialization on it
+would reject working configurations.
 
 **Packages resolve from the wrong interpreter.** Check `sys.prefix` and `sys.base_prefix`
 from inside PyDotNet. If they are equal, no virtual environment is active.
