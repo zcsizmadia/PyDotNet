@@ -281,11 +281,24 @@ public static class PyRuntime
         // installation.  Append site-packages discovered from the shared library path
         // so that user-installed packages (numpy, pandas, etc.) are importable.
         //
-        // This heuristic is skipped once the caller configures the interpreter explicitly.
-        // It resolves site-packages from the *base* installation, which against a
-        // configured virtual environment would re-introduce exactly the packages the
-        // environment exists to shadow — and would defeat a requested isolation setting.
-        List<string> autoSitePaths = options.HasInterpreterConfiguration
+        // The heuristic is skipped once the caller has taken over path resolution — a
+        // program name, virtual environment, or home. It resolves site-packages from the
+        // *base* installation, which against a configured virtual environment would
+        // re-introduce exactly the packages that environment exists to shadow.
+        //
+        // Isolation deliberately does NOT suppress it. Isolation controls what CPython may
+        // read from the environment, not how it locates its own installation, so an
+        // isolated interpreter with no program name still resolves paths the same way an
+        // unconfigured one does and should keep the same fallback. Suppressing it would
+        // also make PyDotNet stricter than CPython itself, since `python -I` implies `-s`,
+        // which removes the *user* site-packages directory and leaves the main one.
+        //
+        // Note this is a correctness argument, not an observed failure: on layouts where
+        // Python sits at its own compiled-in prefix, getpath resolves site-packages
+        // unaided and the fallback only re-adds paths already present. It earns its keep
+        // where that prefix is wrong — relocated installs, Debian multiarch, containers
+        // where Python was copied away from its build tree.
+        List<string> autoSitePaths = options.HasInterpreterPathConfiguration
             ? []
             : DeriveDefaultSysPaths(libraryPath);
         var allAdditionalPaths = autoSitePaths.Count > 0

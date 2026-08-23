@@ -190,6 +190,27 @@ public sealed class IsolationActivation
 
         using var ignoreEnvironment = interpreter.Evaluate("sys.flags.ignore_environment");
         await Assert.That(ignoreEnvironment.As<int>()).IsEqualTo(1);
+
+        // Smoke check: an isolated interpreter can still import an installed package.
+        //
+        // This is deliberately NOT described as a regression test for the site-packages
+        // fallback, because it demonstrably is not one. Running this assertion against
+        // the code before that fix passed on every platform and Python version in the
+        // matrix, so it holds whether or not the fallback is applied.
+        //
+        // The reason is that CI installs Python at its own compiled-in prefix, where
+        // CPython's getpath resolves site-packages unaided and DeriveDefaultSysPaths only
+        // re-adds paths that are already present. The fallback matters on layouts where
+        // that prefix is wrong — relocated installs, Debian multiarch, containers where
+        // Python was copied away from its build tree — none of which CI exercises.
+        //
+        // The actual guard against re-merging the two predicates is in
+        // PyInterpreterConfigurationOptionsTests: those assertions fail immediately if
+        // isolation is once again treated as path configuration. This one only confirms
+        // that isolation does not obviously break importing.
+        interpreter.Execute("import numpy");
+        using var numpyLocation = interpreter.Evaluate("numpy.__file__");
+        await Assert.That(numpyLocation.As<string>()).IsNotNull().And.IsNotEmpty();
     }
 
     private static void RequireIsolationRun()
