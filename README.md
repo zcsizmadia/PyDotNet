@@ -1354,7 +1354,9 @@ dotnet format
 | Windows | x64 | 3.11, 3.12, 3.13, 3.14 | Tested in CI |
 | Linux (Ubuntu) | x64 | 3.11, 3.12, 3.13, 3.14 | Tested in CI |
 | Linux (Ubuntu) | arm64 | 3.11, 3.12, 3.13, 3.14 | Tested in CI |
-| macOS | x64, Apple Silicon | 3.11, 3.12, 3.13, 3.14 | Tested in CI |
+| macOS | Apple Silicon | 3.11, 3.12, 3.13, 3.14 | Tested in CI |
+
+Intel macOS is not covered by CI. PyTorch no longer publishes macOS x86_64 wheels, so `PyDotNet.Torch` cannot be exercised there; the core library is expected to work but is untested on that platform.
 
 CI runs the full test suite across all three .NET TFMs (net8.0, net9.0, net10.0) and all four Python versions on every push.
 
