@@ -190,6 +190,32 @@ public sealed class IsolationActivation
 
         using var ignoreEnvironment = interpreter.Evaluate("sys.flags.ignore_environment");
         await Assert.That(ignoreEnvironment.As<int>()).IsEqualTo(1);
+
+        // ── CONTROL EXPERIMENT — this branch is expected to FAIL on Linux and macOS ──
+        //
+        // This is the assertion added by #45, applied to the code *before* that fix, to
+        // establish whether the bug it describes is real rather than merely argued.
+        //
+        // InitializeCore currently suppresses the site-packages fallback whenever any
+        // interpreter option is set, isolation included. Because embedded Python derives
+        // its paths from the .NET host executable, that should leave the base
+        // installation's site-packages off sys.path and make numpy unimportable — but
+        // only on Linux and macOS, since DeriveDefaultSysPaths returns early on Windows.
+        //
+        // Expected outcome:
+        //   Linux / macOS  -> RED. The bug is real and #45's test has teeth.
+        //   all green      -> the bug does not manifest in this configuration, and #45's
+        //                     test is vacuous as written even though its fix is correct.
+        //
+        // Diagnostics are printed either way so the sys.path contents are on record.
+        var sysPath = interpreter.Evaluate("repr(sys.path)").As<string>();
+        var prefix = interpreter.Evaluate("sys.prefix").As<string>();
+        Console.WriteLine($"[control] sys.prefix = {prefix}");
+        Console.WriteLine($"[control] sys.path   = {sysPath}");
+
+        interpreter.Execute("import numpy");
+        using var numpyLocation = interpreter.Evaluate("numpy.__file__");
+        Console.WriteLine($"[control] numpy      = {numpyLocation.As<string>()}");
     }
 
     private static void RequireIsolationRun()
