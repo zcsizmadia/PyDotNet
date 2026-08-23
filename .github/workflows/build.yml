@@ -15,7 +15,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest]
+        # macos-latest is Apple Silicon (arm64).
+        #
+        # Intel macOS (macos-15-intel) is deliberately not covered: PyTorch no longer
+        # publishes macOS x86_64 wheels. On Python 3.13/3.14 none exist at all, and on
+        # 3.11/3.12 pip resolves a stale 2.2.x wheel built against NumPy 1.x, which then
+        # fails with "Numpy is not available". Pinning numpy<2 for that platform alone
+        # would diverge its test environment from every other job, and PyDotNet.Torch
+        # cannot work there regardless.
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-latest]
         python-version: ['3.11', '3.12', '3.13', '3.14']
 
         include:
