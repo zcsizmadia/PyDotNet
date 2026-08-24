@@ -41,6 +41,12 @@ public static class PyRuntime
     internal static bool IsPythonAlive => Volatile.Read(ref _nativeLibraryHandle) != IntPtr.Zero;
 
     /// <summary>
+    /// Gets the handle of the loaded Python shared library, for capability probes against
+    /// the interpreter that is actually running.
+    /// </summary>
+    internal static IntPtr NativeLibraryHandle => Volatile.Read(ref _nativeLibraryHandle);
+
+    /// <summary>
     /// Gets a value indicating whether the Python GIL is enabled.
     /// Returns <see langword="false"/> on Python 3.13+ free-threaded builds (no-GIL mode).
     /// </summary>
@@ -253,9 +259,7 @@ public static class PyRuntime
         var initializedHere = NativeMethods.Py_IsInitialized() == 0;
         if (initializedHere)
         {
-            ApplyInterpreterConfiguration(options);
-            NativeMethods.Py_Initialize();
-            _logger.PyInitializeCalled();
+            InitializeInterpreter(options);
         }
         else
         {
@@ -355,6 +359,88 @@ public static class PyRuntime
     }
 
     /// <summary>
+    /// Configures and starts CPython, choosing between the two initialization APIs that
+    /// the loaded build might offer.
+    /// <para>
+    /// PEP 741's <c>PyInitConfig</c> (Python 3.14+) is preferred where present. It is the
+    /// only option on Python 3.15, which removed every legacy symbol, and preferring it on
+    /// 3.14 means the path is exercised on a version that can be tested today rather than
+    /// running for the first time on 3.15. Python 3.11–3.13 fall back to the legacy
+    /// globals followed by <c>Py_Initialize()</c>.
+    /// </para>
+    /// <para>
+    /// The two paths are kept behaviourally identical, which takes deliberate effort:
+    /// <c>PyInitConfig_Create()</c> hands back an <i>isolated</i> configuration, so
+    /// <see cref="PythonInitConfig.InitializeFromInitConfig"/> writes the non-isolated
+    /// defaults explicitly. Without that, moving from 3.13 to 3.14 would silently isolate
+    /// a caller's interpreter.
+    /// </para>
+    /// </summary>
+    private static void InitializeInterpreter(PyRuntimeOptions options)
+    {
+        if (PythonInitConfig.SupportsInitConfig(_nativeLibraryHandle))
+        {
+            RecordAppliedConfiguration(options);
+
+            var programName = ResolveAndValidateProgramName(options);
+            var pythonHome = options.PythonHome is null ? null : Path.GetFullPath(options.PythonHome);
+
+            PythonInitConfig.InitializeFromInitConfig(
+                _nativeLibraryHandle, programName, pythonHome, options.Isolation);
+
+            _logger.InitializedFromInitConfig();
+            return;
+        }
+
+        ApplyInterpreterConfiguration(options);
+        NativeMethods.Py_Initialize();
+        _logger.PyInitializeCalled();
+    }
+
+    /// <summary>
+    /// Resolves the effective program name, applying the same once-per-process guard the
+    /// legacy path uses, and logs the mismatch warning for a configured virtual
+    /// environment.
+    /// </summary>
+    private static string? ResolveAndValidateProgramName(PyRuntimeOptions options)
+    {
+        var programName = options.ResolveProgramName();
+        if (programName is null)
+        {
+            return null;
+        }
+
+        programName = Path.GetFullPath(programName);
+
+        if (_appliedProgramName is not null &&
+            !string.Equals(_appliedProgramName, programName, PathComparison))
+        {
+            throw new PyRuntimeException(
+                $"CPython was already configured with program name '{_appliedProgramName}' and " +
+                $"cannot be reconfigured to '{programName}' in the same process. The program " +
+                "name is read once, during interpreter initialization.");
+        }
+
+        if (options.VirtualEnvironmentPath is not null)
+        {
+            WarnOnVirtualEnvironmentMismatch(options.VirtualEnvironmentPath);
+        }
+
+        _appliedProgramName = programName;
+        _logger.ProgramNameApplied(programName);
+        return programName;
+    }
+
+    /// <summary>
+    /// Stores the signature of the settings CPython is being initialized with, so a later
+    /// <c>Initialize</c> can tell an idempotent repeat from an attempt to reconfigure.
+    /// </summary>
+    private static void RecordAppliedConfiguration(PyRuntimeOptions options) =>
+        _appliedConfigurationSignature = options.HasInterpreterConfiguration
+            ? options.InterpreterConfigurationSignature()
+            : null;
+
+    /// <summary>
     /// Applies the caller's pre-initialization CPython settings. Must run after the shared
     /// library is loaded and before <c>Py_Initialize()</c>.
     /// <para>
@@ -367,37 +453,17 @@ public static class PyRuntime
     /// </summary>
     private static void ApplyInterpreterConfiguration(PyRuntimeOptions options)
     {
-        _appliedConfigurationSignature = options.HasInterpreterConfiguration
-            ? options.InterpreterConfigurationSignature()
-            : null;
+        RecordAppliedConfiguration(options);
 
         if (!options.HasInterpreterConfiguration)
         {
             return;
         }
 
-        var programName = options.ResolveProgramName();
+        var programName = ResolveAndValidateProgramName(options);
         if (programName is not null)
         {
-            programName = Path.GetFullPath(programName);
-
-            if (_appliedProgramName is not null &&
-                !string.Equals(_appliedProgramName, programName, PathComparison))
-            {
-                throw new PyRuntimeException(
-                    $"CPython was already configured with program name '{_appliedProgramName}' and " +
-                    $"cannot be reconfigured to '{programName}' in the same process. The program " +
-                    "name is read once, during Py_Initialize().");
-            }
-
-            if (options.VirtualEnvironmentPath is not null)
-            {
-                WarnOnVirtualEnvironmentMismatch(options.VirtualEnvironmentPath);
-            }
-
             PythonInitConfig.SetProgramName(_nativeLibraryHandle, programName);
-            _appliedProgramName = programName;
-            _logger.ProgramNameApplied(programName);
         }
 
         if (options.PythonHome is not null)

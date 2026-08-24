@@ -1,3 +1,5 @@
+using System.Globalization;
+
 using PyDotNet.Exceptions;
 using PyDotNet.Native;
 using PyDotNet.Runtime;
@@ -78,6 +80,60 @@ public sealed class InterpreterConfigurationTests
         using var interpreter = PyRuntime.CreateInterpreter();
         using var value = interpreter.Evaluate("40 + 2");
         await Assert.That(value.As<int>()).IsEqualTo(42);
+
+        // An interpreter nobody asked to isolate must not be isolated — on every Python
+        // version, whichever initialization API was used underneath.
+        //
+        // This is the regression guard for a real trap in the PEP 741 path:
+        // PyInitConfig_Create() hands back an *isolated* configuration, so simply
+        // translating the options onto it produces isolated=1, no_user_site=1,
+        // ignore_environment=1 where Py_Initialize() produces zeroes. PyDotNet writes the
+        // non-isolated defaults explicitly to compensate. Neither the virtual environment
+        // test nor the isolation test would notice if that were dropped: one passes either
+        // way, and the other asserts the flags are set.
+        //
+        // This fixture never requests isolation, so the flags must all be zero.
+        interpreter.Execute("import sys");
+
+        using var isolated = interpreter.Evaluate("sys.flags.isolated");
+        await Assert.That(isolated.As<int>()).IsEqualTo(0);
+
+        using var noUserSite = interpreter.Evaluate("sys.flags.no_user_site");
+        await Assert.That(noUserSite.As<int>()).IsEqualTo(0);
+
+        using var ignoreEnvironment = interpreter.Evaluate("sys.flags.ignore_environment");
+        await Assert.That(ignoreEnvironment.As<int>()).IsEqualTo(0);
+
+        // safe_path is not a PyDotNet option, but the PEP 741 default configuration turns
+        // it on, which would drop the script and working directories from sys.path.
+        using var safePath = interpreter.Evaluate("bool(sys.flags.safe_path)");
+        await Assert.That(safePath.As<bool>()).IsFalse();
+    }
+
+    /// <summary>
+    /// The PEP 741 capability probe decides which initialization API PyDotNet uses, and it
+    /// must agree with the interpreter actually loaded: PyInitConfig arrived in Python
+    /// 3.14. A probe that answered incorrectly would either pick an API this build does not
+    /// export, or silently keep using the legacy symbols on a version that has dropped them.
+    /// </summary>
+    [Test]
+    public async Task InitConfigSupport_MatchesTheLoadedPythonVersion()
+    {
+        InitializeOrSkip();
+
+        using var interpreter = PyRuntime.CreateInterpreter();
+        var version = interpreter.GetPythonVersion();
+
+        var parts = version.Split('.');
+        var major = int.Parse(parts[0], CultureInfo.InvariantCulture);
+        var minor = int.Parse(parts[1], CultureInfo.InvariantCulture);
+
+        var expected = major > 3 || (major == 3 && minor >= 14);
+        var actual = PythonInitConfig.SupportsInitConfig(PyRuntime.NativeLibraryHandle);
+
+        await Assert.That(actual)
+            .IsEqualTo(expected)
+            .Because($"Python {version} {(expected ? "provides" : "predates")} the PyInitConfig API");
     }
 
     private static void InitializeOrSkip()
@@ -191,6 +247,10 @@ public sealed class IsolationActivation
         using var ignoreEnvironment = interpreter.Evaluate("sys.flags.ignore_environment");
         await Assert.That(ignoreEnvironment.As<int>()).IsEqualTo(1);
 
+        // CPython derives safe_path from isolated, in both initialization APIs.
+        using var safePath = interpreter.Evaluate("bool(sys.flags.safe_path)");
+        await Assert.That(safePath.As<bool>()).IsTrue();
+
         // Smoke check: an isolated interpreter can still import an installed package.
         //
         // This is deliberately NOT described as a regression test for the site-packages
@@ -208,9 +268,25 @@ public sealed class IsolationActivation
         // PyInterpreterConfigurationOptionsTests: those assertions fail immediately if
         // isolation is once again treated as path configuration. This one only confirms
         // that isolation does not obviously break importing.
-        interpreter.Execute("import numpy");
-        using var numpyLocation = interpreter.Evaluate("numpy.__file__");
-        await Assert.That(numpyLocation.As<string>()).IsNotNull().And.IsNotEmpty();
+        // The package is resolved dynamically rather than imported directly, because a
+        // brand-new Python release generally has no third-party wheels yet: numpy is
+        // simply absent on a 3.15 release candidate. Skipping the check there keeps the
+        // test meaningful where packages exist without making it fail where they cannot.
+        // The sentinel is an empty string rather than None: marshalling a Python None
+        // through As<string>() yields the text "None", which would sail past a null check
+        // and produce "import None".
+        interpreter.Execute("""
+            import importlib.util
+            _pdn_site_package = 'numpy' if importlib.util.find_spec('numpy') else ''
+            """);
+
+        using var candidate = interpreter.Evaluate("_pdn_site_package");
+        if (candidate.As<string>() is { Length: > 0 } package)
+        {
+            interpreter.Execute($"import {package}");
+            using var location = interpreter.Evaluate($"{package}.__file__");
+            await Assert.That(location.As<string>()).IsNotNull().And.IsNotEmpty();
+        }
     }
 
     private static void RequireIsolationRun()

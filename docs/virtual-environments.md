@@ -215,18 +215,48 @@ from inside PyDotNet. If they are equal, no virtual environment is active.
 
 ## Python version support
 
-The settings are applied through CPython's pre-initialization symbols, which are
-deprecated but present through Python 3.14:
+Every option on this page behaves identically on every supported Python version. CPython
+offers two different mechanisms for pre-initialization configuration, and PyDotNet selects
+between them at runtime — nothing about which one is in use reaches the API.
 
-| Symbol | Status |
+| Python | Mechanism |
 |---|---|
-| `Py_SetProgramName` | Deprecated in 3.11, removed in 3.15 |
-| `Py_SetPythonHome` | Deprecated in 3.11, removed in 3.15 |
-| `Py_IsolatedFlag` | Deprecated in 3.12, removed in 3.15 |
-| `Py_IgnoreEnvironmentFlag` | Deprecated in 3.12, removed in 3.15 |
-| `Py_NoUserSiteDirectory` | Deprecated in 3.12, removed in 3.15 |
+| 3.11 – 3.13 | Legacy globals (`Py_SetProgramName`, `Py_IsolatedFlag`, …) then `Py_Initialize()` |
+| 3.14 | `PyInitConfig` ([PEP 741](https://peps.python.org/pep-0741/)) — both are available, the newer one is preferred |
+| 3.15+ | `PyInitConfig` |
 
-PyDotNet resolves each symbol at runtime and raises a `PyRuntimeException` naming the
-missing symbol if a build does not export it. Supporting Python 3.15 will require the
-`PyInitConfig` API introduced by [PEP 741](https://peps.python.org/pep-0741/); the options
-described here are designed to carry over unchanged.
+PyDotNet probes for `PyInitConfig_Create` and `Py_InitializeFromInitConfig` and uses them
+when present. Preferring the newer API on 3.14, where both exist, means the path that 3.15
+depends on is exercised on a version that is already covered by CI.
+
+### Keeping the two paths equivalent
+
+The APIs do not start from the same defaults, and the difference is not subtle:
+`PyInitConfig_Create()` returns an **isolated** configuration, where `Py_Initialize()`
+does not. Translating the options directly onto it would isolate every interpreter on
+Python 3.14 and later, silently, on upgrade.
+
+PyDotNet therefore writes these settings explicitly on every initialization, whether or
+not isolation was requested:
+
+| Setting | Not isolated | `Isolation = PyIsolationOptions.Full` |
+|---|---|---|
+| `isolated` | 0 | 1 |
+| `use_environment` | 1 | 0 |
+| `user_site_directory` | 1 | 0 |
+| `safe_path` | 0 | 1 |
+
+`safe_path` (`-P` / `PYTHONSAFEPATH`) is not exposed as a PyDotNet option, but the isolated
+configuration turns it on, and it removes the script and working directories from
+`sys.path`. It is written explicitly for the same reason as the others. The resulting
+`sys.flags` are identical under both mechanisms.
+
+### A note on Python 3.15
+
+The legacy symbols are documented as removed in 3.15, but that removal is from the headers
+rather than the binary — they are part of the stable ABI. Builds of 3.15 still export
+them. PyDotNet resolves symbols at runtime rather than compiling against headers, so this
+distinction does not affect it either way; the `PyInitConfig` path is used regardless.
+
+If a build should ever omit a symbol that PyDotNet needs, initialization fails with a
+`PyRuntimeException` naming that symbol rather than an obscure loader error.
