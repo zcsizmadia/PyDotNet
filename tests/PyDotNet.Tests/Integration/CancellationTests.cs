@@ -45,8 +45,27 @@ public sealed class CancellationTests
 
         cts.Cancel();
         await Assert.That(async () => await operation).Throws<OperationCanceledException>();
-        using var finalized = interp.Evaluate("_pydotnet_cancel_finally");
-        await Assert.That(finalized.As<bool>()).IsTrue();
+
+        // The .NET task can complete before Python has finished unwinding the coroutine:
+        // cancellation is delivered to the asyncio task, and its finally block runs on the
+        // event loop afterwards. Reading the flag once assumes those happen in lock step,
+        // which held on x64 and failed on arm64 — the same shape as the poll above, which
+        // already waits for the coroutine to start rather than assuming it has.
+        var finalized = false;
+        for (var i = 0; i < 100 && !finalized; i++)
+        {
+            using var value = interp.Evaluate("_pydotnet_cancel_finally");
+            finalized = value.As<bool>();
+
+            if (!finalized)
+            {
+                await Task.Delay(10);
+            }
+        }
+
+        await Assert.That(finalized)
+            .IsTrue()
+            .Because("the finally block should run when the coroutine is cancelled");
     }
 
     [Test]
