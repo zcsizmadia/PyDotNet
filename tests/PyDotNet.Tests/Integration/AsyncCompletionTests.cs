@@ -47,7 +47,7 @@ public sealed class AsyncCompletionTests
         interp.Execute("""
             import asyncio
 
-            async def greet(name, greeting="Hello"):
+            async def ac_greet(name, greeting="Hello"):
                 await asyncio.sleep(0)
                 return f"{greeting}, {name}!"
             """);
@@ -55,7 +55,7 @@ public sealed class AsyncCompletionTests
         using var module = interp.ImportModule("__main__");
 
         var result = await module.CallAsync<string>(
-            "greet",
+            "ac_greet",
             new object?[] { "World" },
             new Dictionary<string, object?> { ["greeting"] = "Hi" });
 
@@ -324,13 +324,13 @@ public sealed class AsyncCompletionTests
         interp.Execute("""
             import asyncio
 
-            async def square(x):
+            async def ac_square(x):
                 await asyncio.sleep(0)
                 return x * x
             """);
 
         // EvaluateAsync evaluates the expression and drives the coroutine
-        var result = await interp.EvaluateAsync<int>("square(9)");
+        var result = await interp.EvaluateAsync<int>("ac_square(9)");
 
         await Assert.That(result).IsEqualTo(81);
     }

@@ -92,13 +92,13 @@ public sealed class PyTaskGroupTests
         interp.Execute("""
             import asyncio
 
-            async def greet(name):
+            async def tg_greet(name):
                 await asyncio.sleep(0)
                 return f"Hello, {name}!"
             """);
 
         using var module = interp.ImportModule("__main__");
-        using var func = module.GetFunction("greet");
+        using var func = module.GetFunction("tg_greet");
 
         using var group = new PyTaskGroup(interp);
         group.Add(func, "Alice").Add(func, "Bob");
@@ -233,13 +233,13 @@ public sealed class PyTaskGroupTests
         interp.Execute("""
             import asyncio
 
-            async def square(n):
+            async def tg_square(n):
                 await asyncio.sleep(0)
                 return n * n
             """);
 
         using var module = interp.ImportModule("__main__");
-        using var func = module.GetFunction("square");
+        using var func = module.GetFunction("tg_square");
 
         using var group = new PyTaskGroup(interp);
         group.Add(func, 2).Add(func, 3).Add(func, 4);
