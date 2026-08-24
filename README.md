@@ -12,7 +12,7 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 [![NuGet](https://img.shields.io/nuget/v/PyDotNet.svg)](https://www.nuget.org/packages/PyDotNet)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![.NET: 8 | 9 | 10](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010-purple)
-![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)
+![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14%20%7C%203.15--rc-blue)
 
 ---
 
@@ -117,10 +117,17 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 | Component | Minimum version |
 |---|---|
 | .NET SDK | 8.0 |
-| Python | 3.11 — 3.14 (CPython, standard GIL or free-threaded builds) |
+| Python | 3.11 — 3.15 (CPython, standard GIL or free-threaded builds) |
 | OS | Windows x64/ARM64, Linux x64/ARM64, macOS (x64 / Apple Silicon) |
 
 Python must be installed **with its shared library** and be discoverable. See [Configuration](#configuration) for the manual override.
+
+> **Python 3.15** is supported and verified against 3.15.0rc1, but it is still a release
+> candidate (final: 2026-10-01). CI runs it as an informational job that cannot fail the
+> build, because most third-party wheels — `pyarrow`, `matplotlib`, `torch` — do not exist
+> for it yet. 3.11 through 3.14 are the versions the build enforces. PyDotNet picks its
+> interpreter configuration mechanism per version automatically; see
+> [Virtual environments and isolation](docs/virtual-environments.md#python-version-support).
 
 **Linux** — install the shared-library package (not just the interpreter):
 ```bash
@@ -1355,10 +1362,13 @@ dotnet format
 | Linux (Ubuntu) | x64 | 3.11, 3.12, 3.13, 3.14 | Tested in CI |
 | Linux (Ubuntu) | arm64 | 3.11, 3.12, 3.13, 3.14 | Tested in CI |
 | macOS | Apple Silicon | 3.11, 3.12, 3.13, 3.14 | Tested in CI |
+| Linux (Ubuntu) | x64 | 3.15 (release candidate) | Informational job — see below |
 
 Intel macOS is not covered by CI. PyTorch no longer publishes macOS x86_64 wheels, so `PyDotNet.Torch` cannot be exercised there; the core library is expected to work but is untested on that platform.
 
-CI runs the full test suite across all three .NET TFMs (net8.0, net9.0, net10.0) and all four Python versions on every push.
+Python 3.15 runs as a separate job that cannot fail the build. Most third-party wheels do not exist for it yet — `pyarrow`, `matplotlib` and `torch` are all absent at 3.15.0rc1 — so only the interpreter lifecycle suite runs there, covering initialization, virtual environment activation, and isolation. It moves into the matrix once 3.15 is final and the wheels have caught up.
+
+CI runs the full test suite across all three .NET TFMs (net8.0, net9.0, net10.0) and all four supported Python versions on every push.
 
 ---
 
