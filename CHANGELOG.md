@@ -1,0 +1,99 @@
+# Changelog
+
+Notable changes to PyDotNet and its plugin packages. All five packages version together.
+
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
+project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Since v1.2.0
+that is checked rather than asserted: every packable project is validated against the
+previously published version, and the build fails on an unintended breaking API change.
+
+## [Unreleased]
+
+### Added
+
+- **Python 3.15 support.** Interpreter configuration now goes through the `PyInitConfig`
+  API ([PEP 741](https://peps.python.org/pep-0741/)) where CPython provides it — 3.14 and
+  later — falling back to the legacy globals on 3.11–3.13. Which mechanism is used is
+  invisible to callers; `PyRuntimeOptions` is unchanged. ([#48](https://github.com/zcsizmadia/PyDotNet/pull/48))
+- **Free-threaded CPython is verified.** The no-GIL build now runs in CI, and
+  `PyRuntime.IsGilEnabled` is checked against the interpreter's build configuration rather
+  than against the same call the detection makes. ([#52](https://github.com/zcsizmadia/PyDotNet/pull/52))
+- **API reference site** at <https://zcsizmadia.github.io/PyDotNet/>, generated from the
+  source on every push and published to GitHub Pages alongside the existing guides.
+  ([#55](https://github.com/zcsizmadia/PyDotNet/pull/55))
+- **Symbol packages and SourceLink**, so consumers can step into PyDotNet source while
+  debugging — which matters most at the native interop boundary, where a managed stack
+  trace rarely explains anything on its own. ([#49](https://github.com/zcsizmadia/PyDotNet/pull/49))
+
+### Changed
+
+- `InterpreterPoolSize` now states that it has no effect and logs a warning when set above
+  1. There is no interpreter pool; the property is kept because
+  [PEP 684](https://peps.python.org/pep-0684/) support would want the name back.
+  ([#53](https://github.com/zcsizmadia/PyDotNet/pull/53))
+- Package API compatibility is validated on every build against the last published
+  version. ([#49](https://github.com/zcsizmadia/PyDotNet/pull/49))
+
+### Fixed
+
+- **Releases publish the artifact built from the tagged commit.** Previously the newest
+  successful build on `main` was used, which is not necessarily the commit being released —
+  so publishing while the tagged commit was still building would have shipped earlier
+  binaries under the new tag, with nothing to catch it.
+  ([#51](https://github.com/zcsizmadia/PyDotNet/pull/51))
+
+### Documentation
+
+- Corrected the NuGet badge, which reported the version of an unrelated package.
+  ([#46](https://github.com/zcsizmadia/PyDotNet/pull/46))
+- Recorded sub-interpreters and the outstanding smaller items on the roadmap.
+  ([#56](https://github.com/zcsizmadia/PyDotNet/pull/56))
+
+### Internal
+
+- Test isolation: parallel tests no longer collide in the shared `__main__` namespace, and
+  a cancellation test no longer assumes Python finishes unwinding a coroutine the moment
+  .NET observes the cancellation. Both were intermittent failures.
+  ([#50](https://github.com/zcsizmadia/PyDotNet/pull/50),
+  [#54](https://github.com/zcsizmadia/PyDotNet/pull/54))
+
+## [1.1.0] — 2026-08-23
+
+### Added
+
+- **Virtual environment support.** `VirtualEnvironmentPath` points PyDotNet at a venv so
+  its packages are importable; `ProgramName` and `PythonHome` are the underlying
+  primitives. Embedded Python otherwise takes `argv[0]` from the .NET host executable, so
+  `sys.prefix` resolves against the base installation and nothing installed into the
+  environment can be imported. ([#36](https://github.com/zcsizmadia/PyDotNet/issues/36))
+- **Interpreter isolation.** `PyIsolationOptions` controls `isolated`, `use_environment`
+  and `user_site_directory`, so the host application rather than the machine decides what
+  Python can see. ([#37](https://github.com/zcsizmadia/PyDotNet/issues/37))
+- Samples for both, and a
+  [Virtual environments and isolation](docs/virtual-environments.md) guide.
+- macOS (Apple Silicon) added to the CI matrix.
+
+### Notes
+
+- These settings are read once, during interpreter initialization, and cannot be changed
+  afterwards in the same process.
+- CPython does not validate them. Given a program name pointing at a missing interpreter it
+  reports a fully configured environment in which every import fails, so PyDotNet checks
+  the paths itself and throws rather than leaving an undiagnosable symptom.
+
+## [1.0.0] — 2026-05-25
+
+### Added
+
+- Plugin packages: `PyDotNet.NumPy`, `PyDotNet.DataFrames`, `PyDotNet.Torch`,
+  `PyDotNet.Matplotlib`.
+- Precompiled code support, advanced async patterns, and expanded runtime hardening.
+
+## [0.9.0] — 2026-05-22
+
+- First release.
+
+[Unreleased]: https://github.com/zcsizmadia/PyDotNet/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/zcsizmadia/PyDotNet/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/zcsizmadia/PyDotNet/compare/v0.9.0...v1.0.0
+[0.9.0]: https://github.com/zcsizmadia/PyDotNet/releases/tag/v0.9.0
