@@ -111,6 +111,49 @@ public sealed class InterpreterConfigurationTests
     }
 
     /// <summary>
+    /// <see cref="PyRuntime.IsGilEnabled"/> is checked against the interpreter's own build
+    /// configuration rather than against <c>sys._is_gil_enabled()</c>, which is the call
+    /// the detection already makes — comparing those two would only prove the code agrees
+    /// with itself.
+    /// <para>
+    /// <c>Py_GIL_DISABLED</c> comes from how the interpreter was compiled. A standard build
+    /// always has the GIL. A free-threaded build starts without it, but can be told to
+    /// re-enable it at runtime (<c>PYTHON_GIL=1</c>), so there the runtime answer is
+    /// authoritative and the two may legitimately disagree.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task IsGilEnabled_AgreesWithTheInterpreterBuild()
+    {
+        InitializeOrSkip();
+
+        using var interpreter = PyRuntime.CreateInterpreter();
+        interpreter.Execute("""
+            import sysconfig
+            _pdn_free_threaded = bool(sysconfig.get_config_var('Py_GIL_DISABLED'))
+            """);
+
+        using var freeThreadedValue = interpreter.Evaluate("_pdn_free_threaded");
+        var freeThreaded = freeThreadedValue.As<bool>();
+
+        if (!freeThreaded)
+        {
+            await Assert.That(PyRuntime.IsGilEnabled)
+                .IsTrue()
+                .Because("a standard CPython build always holds the GIL");
+            return;
+        }
+
+        // Free-threaded build: the GIL may still have been re-enabled for this process.
+        interpreter.Execute("import sys");
+        using var runtimeValue = interpreter.Evaluate("sys._is_gil_enabled()");
+
+        await Assert.That(PyRuntime.IsGilEnabled)
+            .IsEqualTo(runtimeValue.As<bool>())
+            .Because("on a free-threaded build the runtime state decides");
+    }
+
+    /// <summary>
     /// The PEP 741 capability probe decides which initialization API PyDotNet uses, and it
     /// must agree with the interpreter actually loaded: PyInitConfig arrived in Python
     /// 3.14. A probe that answered incorrectly would either pick an API this build does not
