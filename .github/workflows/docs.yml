@@ -1,0 +1,88 @@
+name: Docs
+
+# Builds the documentation site and publishes it to GitHub Pages.
+#
+# The API reference is generated from the source on every run rather than committed, so it
+# cannot drift from the code. Every public member already carries XML documentation —
+# CS1591 is not suppressed anywhere in src/ and warnings are errors — which is why the
+# metadata pass completes with no warnings and no "no description available" stubs.
+
+on:
+  push:
+    branches: [ main ]
+    # Anything that changes the rendered site: the source it documents, the guides it
+    # includes, or the site configuration itself.
+    paths:
+      - 'src/**'
+      - 'docs/**'
+      - 'docfx/**'
+      - '.github/workflows/docs.yml'
+  # Pull requests build the site but do not deploy it, so a change that breaks the docs is
+  # caught before it reaches main rather than after.
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'docs/**'
+      - 'docfx/**'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+# Allows the deployment to read the repository and publish to Pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time. In-progress runs are left alone rather than cancelled, so a
+# publish is never interrupted half-way.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: Build site
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install .NET SDKs
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Install DocFX
+        run: dotnet tool install -g docfx
+
+      # docfx.json pins TargetFramework so metadata is extracted once rather than once per
+      # target framework, which would otherwise produce duplicate members for every type.
+      - name: Build documentation
+        working-directory: docfx
+        run: |
+          docfx metadata docfx.json --warningsAsErrors
+          docfx build docfx.json --warningsAsErrors
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: docfx/_site
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    name: Deploy to Pages
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

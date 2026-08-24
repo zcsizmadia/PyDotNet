@@ -1,0 +1,8 @@
+# Top-level navigation. The Guides node delegates to docs/toc.yml so the guide list is
+# maintained next to the guides themselves rather than duplicated here — and so links
+# resolve against the source tree, which is what DocFX validates.
+- name: Guides
+  href: ../docs/toc.yml
+
+- name: API reference
+  href: api/

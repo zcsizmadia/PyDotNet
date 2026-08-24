@@ -10,11 +10,15 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 [![Sponsor me](https://img.shields.io/badge/Sponsor-me-pink?style=flat&logo=github-sponsors)](https://github.com/sponsors/zcsizmadia)
 [![Build](https://github.com/zcsizmadia/PyDotNet/actions/workflows/build.yml/badge.svg)](https://github.com/zcsizmadia/PyDotNet/actions/workflows/build.yml)
 [![NuGet](https://img.shields.io/nuget/v/PyDotNet.svg)](https://www.nuget.org/packages/PyDotNet)
+[![API docs](https://img.shields.io/badge/API_docs-zcsizmadia.github.io-2A6DB0)](https://zcsizmadia.github.io/PyDotNet/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![.NET: 8 | 9 | 10](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010-purple)
 ![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14%20%7C%203.15--rc-blue)
 
 ---
+
+> **📖 [Full API reference →](https://zcsizmadia.github.io/PyDotNet/)** — every public type
+> and member, generated from the source on every push, alongside the guides below.
 
 ## Table of contents
 
