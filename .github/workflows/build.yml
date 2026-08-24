@@ -104,6 +104,18 @@ jobs:
           dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build \
             -- --treenode-filter "/*/*/IsolationActivation/*"
 
+      # sys.path is arranged once, during initialization, so each placement needs its own
+      # process — hence two invocations rather than one filter covering both.
+      - name: Test sys.path placement
+        shell: bash
+        env:
+          PYDOTNET_TEST_SYSPATH: "1"
+        run: |
+          for test in Prepend_TakesPrecedenceOverTheStandardLibrary Append_IsTheDefault_AndDoesNotShadow; do
+            dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build \
+              -- --treenode-filter "/*/*/SysPathPlacementTests/$test"
+          done
+
       - name: Run samples
         shell: bash
         env:

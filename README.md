@@ -1144,8 +1144,12 @@ PyRuntime.Initialize(new PyRuntimeOptions
     // Default: auto-discovered from PATH / system defaults.
     PythonLibraryPath = null,
 
-    // Extra entries appended to sys.path before any code runs.
+    // Extra entries added to sys.path before any code runs.
     AdditionalSysPaths = ["/opt/myapp/site-packages"],
+
+    // Where those entries go. Append (the default) extends the search path;
+    // Prepend lets them take precedence over an installed package.
+    SysPathPlacement = PySysPathPlacement.Append,
 
     // Release the GIL after initialization so .NET thread-pool threads
     // can acquire it freely. Default: true.

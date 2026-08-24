@@ -329,10 +329,11 @@ public static class PyRuntime
         List<string> autoSitePaths = options.HasInterpreterPathConfiguration
             ? []
             : DeriveDefaultSysPaths(libraryPath);
-        var allAdditionalPaths = autoSitePaths.Count > 0
-            ? [.. options.AdditionalSysPaths, .. autoSitePaths]
-            : options.AdditionalSysPaths;
-        AppendSysPaths(allAdditionalPaths);
+        // The caller's paths honour SysPathPlacement; the discovered site-packages never
+        // do. Those are a fallback for the interpreter's own resolution, so putting them
+        // first would let them shadow whatever the caller explicitly asked for.
+        ApplySysPaths(options.AdditionalSysPaths, options.SysPathPlacement);
+        ApplySysPaths(autoSitePaths, PySysPathPlacement.Append);
 
         // Import asyncio before releasing the startup GIL. Python 3.14's expanded
         // asyncio dependency graph makes concurrent first imports more likely to
@@ -609,7 +610,16 @@ public static class PyRuntime
         }
     }
 
-    private static void AppendSysPaths(IReadOnlyList<string> paths)
+    /// <summary>
+    /// Adds entries to <c>sys.path</c>, either after the interpreter's own paths or before
+    /// them.
+    /// <para>
+    /// Prepending inserts at ascending indices rather than repeatedly at zero, so the list
+    /// keeps the order it was given: inserting <c>[a, b]</c> at zero twice would leave
+    /// <c>b</c> ahead of <c>a</c>.
+    /// </para>
+    /// </summary>
+    private static void ApplySysPaths(IReadOnlyList<string> paths, PySysPathPlacement placement)
     {
         if (paths.Count == 0)
         {
@@ -625,12 +635,24 @@ public static class PyRuntime
             throw new PyRuntimeException("Python sys.path is unavailable.");
         }
 
-        foreach (var path in paths)
+        for (var i = 0; i < paths.Count; i++)
         {
-            var pyPath = PyApi.NewReference(NativeMethods.PyUnicode_FromString(path), "PyUnicode_FromString");
+            var pyPath = PyApi.NewReference(
+                NativeMethods.PyUnicode_FromString(paths[i]), "PyUnicode_FromString");
             try
             {
-                PyApi.Status(NativeMethods.PyList_Append(sysPaths, pyPath), "PyList_Append(sys.path)");
+                if (placement == PySysPathPlacement.Prepend)
+                {
+                    PyApi.Status(
+                        NativeMethods.PyList_Insert(sysPaths, i, pyPath),
+                        "PyList_Insert(sys.path)");
+                }
+                else
+                {
+                    PyApi.Status(
+                        NativeMethods.PyList_Append(sysPaths, pyPath),
+                        "PyList_Append(sys.path)");
+                }
             }
             finally
             {
@@ -638,7 +660,7 @@ public static class PyRuntime
             }
         }
 
-        _logger.AppendedSysPaths(paths.Count);
+        _logger.AppliedSysPaths(paths.Count, placement);
     }
 
     /// <summary>

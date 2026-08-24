@@ -261,6 +261,10 @@ internal static partial class NativeMethods
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern int PyList_Append(IntPtr list, IntPtr item);
 
+    /// <summary>Inserts an item at <paramref name="index"/>, shifting later items right.</summary>
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern int PyList_Insert(IntPtr list, nint index, IntPtr item);
+
     // ── Dict ───────────────────────────────────────────────────────────────
 
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
