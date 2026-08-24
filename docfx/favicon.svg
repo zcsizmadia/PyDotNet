@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="PyDotNet">
+  <title>PyDotNet</title>
+  <!--
+    Two snakes forming a sharp sign: one lays the left upright and the low bar, the other
+    the right upright and the high bar. Python's palette, C#'s sign.
+
+    The interlace comes from paint order alone — yellow bar, blue upright, blue bar,
+    yellow upright — so blue passes over the high bar and yellow over the low one. Each
+    snake goes over once and under once, which is what reads as woven rather than merely
+    overlapped. No masks or clip paths, so the mark survives being scaled anywhere.
+
+    This is the small-size variant, tuned for 16-24px:
+      * no eyes — they turn to noise below about 32px
+      * heavier strokes and butt caps, so the four counters stay open rather than silting up
+      * yellow darkened from #FFD34E to #E8B32E, which is unreadable on white at this size
+
+    The full mark with eyes lives in logo.svg.
+  -->
+  <g fill="none" stroke-width="12" stroke-linecap="butt">
+    <path d="M4 25 H60" stroke="#E8B32E"/>
+    <path d="M29 2 L23 62" stroke="#3C7EB8"/>
+    <path d="M4 41 H60" stroke="#3C7EB8"/>
+    <path d="M43 2 L37 62" stroke="#E8B32E"/>
+  </g>
+</svg>

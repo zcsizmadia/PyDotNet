@@ -1,3 +1,5 @@
+<img src="icon.png" alt="" width="96" align="right">
+
 # PyDotNet
 
 A modern, high-performance, async-aware, zero-copy Python ↔ .NET interop runtime.
