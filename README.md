@@ -19,6 +19,7 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 
 > **📖 [Full API reference →](https://zcsizmadia.github.io/PyDotNet/)** — every public type
 > and member, generated from the source on every push, alongside the guides below.
+> What changed between releases is in the [changelog](CHANGELOG.md).
 
 ## Table of contents
 

@@ -23,6 +23,9 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageProjectUrl>https://github.com/zcsizmadia/PyDotNet</PackageProjectUrl>
     <RepositoryType>git</RepositoryType>
+    <!-- Points at the changelog rather than restating it: release notes embedded in a
+         package are fixed at pack time and cannot be corrected afterwards. -->
+    <PackageReleaseNotes>https://github.com/zcsizmadia/PyDotNet/blob/main/CHANGELOG.md</PackageReleaseNotes>
   </PropertyGroup>
 
   <!-- Debuggability of published packages.
