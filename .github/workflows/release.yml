@@ -20,7 +20,11 @@ jobs:
       packages: write   # To push to GitHub Packages
 
     steps:
+      # Check out the tagged commit itself, not the branch tip, so the SHA resolved below
+      # is the one being released.
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name }}
 
       - name: Install .NET SDKs
         uses: actions/setup-dotnet@v6
@@ -28,16 +32,33 @@ jobs:
           dotnet-version: |
             10.0.x
 
+      - name: Resolve the tagged commit
+        shell: bash
+        run: |
+          SHA="$(git rev-parse HEAD)"
+          echo "TAG_SHA=$SHA" >> "$GITHUB_ENV"
+          echo "Releasing ${{ github.event.release.tag_name }} -> $SHA"
+
+      # Pinned to the tagged commit rather than "the newest successful build on main".
+      #
+      # Without `commit`, this resolves to the latest successful run that happens to carry
+      # the artifact, which is not necessarily the commit being released. Publishing while
+      # the tagged commit was still building would therefore ship binaries from an earlier
+      # commit under the new tag — a silent mismatch, since the version check below only
+      # compares the tag against Directory.Build.props and both would agree.
+      #
+      # If the tagged commit has not finished building, this step fails rather than
+      # publishing the wrong bits. Re-run the release job once its build is green.
       - name: Download nuget packages from build workflow
         uses: dawidd6/action-download-artifact@v23
         with:
           workflow: build.yml
           workflow_conclusion: success
-          branch: main             # Strictly target the main branch
+          commit: ${{ env.TAG_SHA }}
           name: nuget-packages
           path: ./nupkgs
           check_artifacts: true    # Ensures the workflow actually has the named artifact
-          search_artifacts: true   # Finds the latest run that actually contains this artifact
+          search_artifacts: true   # Finds the run that actually contains this artifact
 
       - name: Check nupkg version
         shell: bash
