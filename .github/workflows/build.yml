@@ -130,6 +130,10 @@ jobs:
           name: nuget-packages
           path: |
             nupkgs/*.nupkg
+            # Symbol packages must travel with their .nupkg: the release workflow pushes
+            # from this artifact, and `dotnet nuget push` only forwards a .snupkg when it
+            # sits alongside the package it belongs to.
+            nupkgs/*.snupkg
 
   # Python 3.15 is still a release candidate (final: 2026-10-01), so it is kept out of the
   # matrix above and cannot fail the build. Two reasons, both temporary:
