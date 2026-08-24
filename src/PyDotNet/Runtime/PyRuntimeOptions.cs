@@ -6,8 +6,19 @@ namespace PyDotNet.Runtime;
 public sealed class PyRuntimeOptions
 {
     /// <summary>
-    /// The number of interpreter instances to create in the pool.
-    /// Defaults to <c>1</c>.
+    /// Reserved for a future interpreter pool. Defaults to <c>1</c>.
+    /// <para>
+    /// <b>This setting currently has no effect.</b> PyDotNet hosts a single CPython
+    /// interpreter, and <see cref="PyRuntime.CreateInterpreter"/> returns a handle to that
+    /// one interpreter rather than drawing from a pool. Raising it does not increase
+    /// parallelism, and PyDotNet logs a warning if you do.
+    /// </para>
+    /// <para>
+    /// Genuine pooling requires per-interpreter GIL support
+    /// (<see href="https://peps.python.org/pep-0684/">PEP 684</see>, Python 3.12+), which
+    /// is not yet implemented. The property is kept so that the eventual implementation
+    /// does not have to reintroduce it.
+    /// </para>
     /// </summary>
     public int InterpreterPoolSize { get; init; } = 1;
 

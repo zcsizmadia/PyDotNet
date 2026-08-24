@@ -15,6 +15,11 @@ internal static partial class Log
     [LoggerMessage(Level = LogLevel.Debug, Message = "PyDotNet: Py_Initialize() called.")]
     internal static partial void PyInitializeCalled(this ILogger logger);
 
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "PyDotNet: InterpreterPoolSize={Requested} was requested, but it currently has no effect — " +
+                  "PyDotNet hosts a single CPython interpreter and does not pool. Parallelism is unchanged.")]
+    internal static partial void InterpreterPoolSizeIgnored(this ILogger logger, int requested);
+
     [LoggerMessage(Level = LogLevel.Debug,
         Message = "PyDotNet: Py_InitializeFromInitConfig() called (PEP 741 configuration API).")]
     internal static partial void InitializedFromInitConfig(this ILogger logger);
