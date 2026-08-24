@@ -31,6 +31,9 @@ public static class PyRuntime
     // Signature of the interpreter configuration CPython was initialized with, so that an
     // idempotent repeat Initialize() can be told from a request to reconfigure.
     private static string? _appliedConfigurationSignature;
+    // Retained so it survives the logger being absent; see WarnOnVirtualEnvironmentMismatch.
+    private static string? _virtualEnvironmentWarning;
+    private static PyEffectiveConfiguration? _effectiveConfiguration;
     /// <summary>Gets the current managed runtime lifecycle state.</summary>
     public static PyRuntimeState State => (PyRuntimeState)Volatile.Read(ref _state);
 
@@ -45,6 +48,19 @@ public static class PyRuntime
     /// the interpreter that is actually running.
     /// </summary>
     internal static IntPtr NativeLibraryHandle => Volatile.Read(ref _nativeLibraryHandle);
+
+    /// <summary>
+    /// Gets what PyDotNet actually resolved when it started CPython, or
+    /// <see langword="null"/> before the runtime has been initialized.
+    /// <para>
+    /// Interpreter discovery has several fallbacks, so the interpreter a process ends up
+    /// hosting is not always the one its author assumed. This is the record of what was
+    /// chosen — the first thing worth checking when imports resolve from somewhere
+    /// unexpected.
+    /// </para>
+    /// </summary>
+    public static PyEffectiveConfiguration? EffectiveConfiguration =>
+        Volatile.Read(ref _effectiveConfiguration);
 
     /// <summary>
     /// Gets a value indicating whether the Python GIL is enabled.
@@ -332,12 +348,51 @@ public static class PyRuntime
             }
         }
 
+        // Recorded last, once everything it describes has settled. Captured while the GIL
+        // is still held here, because reading the version needs it.
+        RecordEffectiveConfiguration(options, libraryPath);
+
         if (initializedHere && options.ReleaseGilAfterInit)
         {
             // Release the GIL so .NET thread-pool threads can acquire it freely.
             _mainThreadState = NativeMethods.PyEval_SaveThread();
             _logger.GilReleasedAfterInit();
         }
+    }
+
+    /// <summary>
+    /// Captures what was actually resolved, for <see cref="EffectiveConfiguration"/>.
+    /// </summary>
+    private static void RecordEffectiveConfiguration(PyRuntimeOptions options, string libraryPath)
+    {
+        Volatile.Write(ref _effectiveConfiguration, new PyEffectiveConfiguration
+        {
+            LibraryPath = libraryPath,
+            PythonVersion = ReadPythonVersion(),
+            ProgramName = _appliedProgramName,
+            PythonHome = options.PythonHome is null ? null : Path.GetFullPath(options.PythonHome),
+            VirtualEnvironmentPath = options.VirtualEnvironmentPath,
+            UsedInitConfig = PythonInitConfig.SupportsInitConfig(_nativeLibraryHandle),
+            IsGilEnabled = IsGilEnabled,
+            VirtualEnvironmentWarning = _virtualEnvironmentWarning,
+        });
+    }
+
+    /// <summary>
+    /// Reads the interpreter's version, trimming the build details CPython appends —
+    /// <c>"3.14.4 (main, ...) [MSC v...]"</c> becomes <c>"3.14.4"</c>. Requires the GIL.
+    /// </summary>
+    private static string ReadPythonVersion()
+    {
+        var pointer = NativeMethods.Py_GetVersion();
+        if (pointer == IntPtr.Zero)
+        {
+            return "unknown";
+        }
+
+        var raw = Marshal.PtrToStringAnsi(pointer) ?? string.Empty;
+        var space = raw.IndexOf(' ', StringComparison.Ordinal);
+        return space > 0 ? raw[..space] : raw;
     }
 
     /// <summary>
@@ -542,6 +597,15 @@ public static class PyRuntime
             !home.StartsWith(libraryDirectory, PathComparison))
         {
             _logger.VirtualEnvironmentBaseMismatch(virtualEnvironmentPath, home, _loadedLibraryPath);
+
+            // Also retained on the effective configuration. The warning above goes to the
+            // configured ILogger, and the default discards everything, so a host that
+            // never attached one would have no way to see the most common cause of a
+            // virtual environment that initializes cleanly yet imports nothing.
+            _virtualEnvironmentWarning =
+                $"Virtual environment '{virtualEnvironmentPath}' was created from base installation " +
+                $"'{home}', which does not appear to match the loaded Python library " +
+                $"'{_loadedLibraryPath}'. Imports from this environment may fail.";
         }
     }
 
