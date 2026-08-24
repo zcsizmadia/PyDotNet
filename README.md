@@ -1426,6 +1426,22 @@ A first-class bridge for columnar data between .NET and Python without any inter
 - Polars `LazyFrame` sink / source so .NET can push and pull data from a Polars pipeline
 - Apache Arrow Flight RPC support for large distributed transfers
 
+### Parallel execution with sub-interpreters
+
+Today PyDotNet hosts one CPython interpreter, so Python work from many .NET threads
+serialises behind a single GIL. [PEP 684](https://peps.python.org/pep-0684/) (Python 3.12+)
+gives each sub-interpreter its own GIL, which is what would make Python genuinely parallel
+from .NET:
+
+- `Py_NewInterpreterFromConfig` with `PyInterpreterConfig_OWN_GIL`, one per pooled interpreter
+- `InterpreterPoolSize` given the meaning its name already implies — it currently has none
+- Rules for object lifetime, since a `PyObject` belongs to the interpreter that created it
+- Async bridge behaviour when each interpreter runs its own event loop
+
+The practical constraint is extension support: a C extension must opt in to multi-phase
+initialisation to load in a sub-interpreter, and many of the ones PyDotNet's users care
+about do not yet. Establishing what actually loads comes before designing the API.
+
 ### Advanced async patterns
 
 The core async bridge includes persistent production hosting, backpressure, Python-side
@@ -1475,3 +1491,16 @@ Building on the existing DLPack and `__cuda_array_interface__` support:
 - **Multi-GPU routing** — inspect device ordinals from DLPack metadata and fan work out across GPUs
 - **NVIDIA cuSPARSE / cuBLAS wrappers** — call into Python math libraries with pre-staged GPU tensors
 - **Unified memory (`cudaMallocManaged`)** — share a single allocation across .NET, Python, and CUDA kernels
+
+### Smaller improvements
+
+Independent of the items above, and each small enough to land on its own:
+
+| | |
+|---|---|
+| **Python 3.15 in the enforced matrix** | 3.15 is verified and runs as an informational job. Promoting it waits on third-party wheels — `pyarrow`, `matplotlib` and `torch` have none yet. Tracked in [#43](https://github.com/zcsizmadia/PyDotNet/issues/43) |
+| **NuGet package icon** | packages currently ship without one, so listings fall back to a placeholder |
+| **Changelog** | release notes are written per release; the history between them lives only in git |
+| **Effective-configuration introspection** | `PyRuntime` exposes `State` and `IsGilEnabled` but not which interpreter it resolved. A read-only view would make support questions answerable — and would surface the virtual environment mismatch warning, which the default `NullLogger` discards |
+| **`sys.path` precedence** | `AdditionalSysPaths` appends, so entries cannot shadow an installed package. Prepending is a behaviour change and wants its own release |
+| **Interpreter restart** | `Py_Finalize` is deliberately never called, so a process gets one interpreter configuration for its lifetime. Worth revisiting whether newer CPython makes a clean finalize viable |
