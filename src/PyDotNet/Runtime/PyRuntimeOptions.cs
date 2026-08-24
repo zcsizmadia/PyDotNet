@@ -34,14 +34,34 @@ public sealed class PyRuntimeOptions
     /// <summary>
     /// Optional entries added to <c>sys.path</c> before any Python code runs.
     /// <para>
-    /// Entries are <b>appended</b>, so they are searched after the interpreter's own
-    /// paths. They extend the search path; they do not shadow a module that is already
-    /// importable. To take precedence over an installed package, use
-    /// <see cref="VirtualEnvironmentPath"/> or <see cref="ProgramName"/> to select an
-    /// interpreter where that package resolves as you intend.
+    /// Entries are appended by default, so they extend the search path without shadowing a
+    /// module that is already importable. Set <see cref="SysPathPlacement"/> to
+    /// <see cref="PySysPathPlacement.Prepend"/> when they need to take precedence.
+    /// </para>
+    /// <para>
+    /// When the goal is to select a different set of packages rather than override an
+    /// individual module, <see cref="VirtualEnvironmentPath"/> is usually the better tool.
     /// </para>
     /// </summary>
     public IReadOnlyList<string> AdditionalSysPaths { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Where <see cref="AdditionalSysPaths"/> entries are placed in <c>sys.path</c>.
+    /// Defaults to <see cref="PySysPathPlacement.Append"/>, which is what every earlier
+    /// release did.
+    /// <para>
+    /// Set <see cref="PySysPathPlacement.Prepend"/> when an entry needs to take precedence
+    /// over an installed package of the same name. Appended entries cannot, because the
+    /// interpreter's own locations are searched first.
+    /// </para>
+    /// <para>
+    /// This applies only to the paths supplied here. The <c>site-packages</c> directories
+    /// PyDotNet discovers for itself on Linux and macOS are always appended: they are a
+    /// fallback for the interpreter's own resolution, and putting them first would let
+    /// them shadow whatever the caller asked for.
+    /// </para>
+    /// </summary>
+    public PySysPathPlacement SysPathPlacement { get; init; } = PySysPathPlacement.Append;
 
     /// <summary>
     /// Path to a PEP 405 virtual environment whose packages should be importable.

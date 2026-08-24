@@ -30,8 +30,8 @@ internal static partial class Log
     [LoggerMessage(Level = LogLevel.Debug, Message = "PyDotNet: GIL released after init (ReleaseGilAfterInit=true).")]
     internal static partial void GilReleasedAfterInit(this ILogger logger);
 
-    [LoggerMessage(Level = LogLevel.Debug, Message = "PyDotNet: appended {Count} path(s) to sys.path.")]
-    internal static partial void AppendedSysPaths(this ILogger logger, int count);
+    [LoggerMessage(Level = LogLevel.Debug, Message = "PyDotNet: {Placement} {Count} path(s) to sys.path.")]
+    internal static partial void AppliedSysPaths(this ILogger logger, int count, PySysPathPlacement placement);
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "PyDotNet: program name set to '{ProgramName}'.")]
     internal static partial void ProgramNameApplied(this ILogger logger, string programName);
