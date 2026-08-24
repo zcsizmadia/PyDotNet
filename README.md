@@ -1137,14 +1137,15 @@ PyRuntime.Initialize(new PyRuntimeOptions
     // Default: auto-discovered from PATH / system defaults.
     PythonLibraryPath = null,
 
-    // Extra entries prepended to sys.path before any code runs.
+    // Extra entries appended to sys.path before any code runs.
     AdditionalSysPaths = ["/opt/myapp/site-packages"],
 
     // Release the GIL after initialization so .NET thread-pool threads
     // can acquire it freely. Default: true.
     ReleaseGilAfterInit = true,
 
-    // Number of interpreters in the internal pool. Default: 1.
+    // Reserved for a future interpreter pool; currently has no effect.
+    // PyDotNet hosts a single interpreter. Default: 1.
     InterpreterPoolSize = 1,
 });
 ```

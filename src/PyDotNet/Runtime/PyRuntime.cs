@@ -280,6 +280,14 @@ public static class PyRuntime
 
         IsGilEnabled = DetectGilEnabled();
 
+        // Say so rather than accepting the value and doing nothing with it. Someone raising
+        // this is expecting more parallelism, and would otherwise have no way to discover
+        // that nothing changed.
+        if (options.InterpreterPoolSize > 1)
+        {
+            _logger.InterpreterPoolSizeIgnored(options.InterpreterPoolSize);
+        }
+
         // On Linux/macOS, embedded Python derives its home from argv[0] (the .NET host
         // executable), so site.py may not add the site-packages of the actual Python
         // installation.  Append site-packages discovered from the shared library path
