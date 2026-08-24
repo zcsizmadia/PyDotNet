@@ -233,3 +233,58 @@ jobs:
         run: |
           dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build \
             -- --treenode-filter "/*/*/IsolationActivation/*"
+
+  # Free-threaded (no-GIL) CPython, which the requirements table advertises as supported.
+  # Until now nothing exercised it: PyRuntime.DetectGilEnabled existed but the only test
+  # asserted IsGilEnabled == true, which is the standard-build answer.
+  #
+  # Kept out of the matrix and non-blocking for the same reason as the 3.15 job: wheels for
+  # free-threaded builds lag, so the plugin test projects cannot run. The lifecycle suite
+  # needs only the standard library, and it is what covers the runtime differences —
+  # including the GIL detection this job exists to verify.
+  free-threaded:
+    runs-on: ubuntu-latest
+    name: Build - Python 3.14 free-threaded (informational)
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install .NET SDKs
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Set up free-threaded Python 3.14
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14t'
+          update-environment: true
+
+      - name: Confirm this really is a free-threaded build
+        shell: bash
+        run: |
+          python -VV
+          # Guards against setup-python silently falling back to a standard build, which
+          # would leave this job green while testing nothing it was added to test.
+          python - <<'PY'
+          import sys, sysconfig
+          free_threaded = bool(sysconfig.get_config_var("Py_GIL_DISABLED"))
+          print(f"Py_GIL_DISABLED={free_threaded}  sys._is_gil_enabled()={sys._is_gil_enabled()}")
+          if not free_threaded:
+              raise SystemExit("::error::Expected a free-threaded interpreter, got a standard build.")
+          PY
+
+      - name: Build
+        shell: bash
+        run: |
+          dotnet restore
+          dotnet build -c Release --no-restore
+
+      - name: Test interpreter lifecycle
+        shell: bash
+        run: |
+          dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build
