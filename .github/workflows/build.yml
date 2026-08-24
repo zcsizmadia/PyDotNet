@@ -169,16 +169,23 @@ jobs:
           allow-prereleases: true
           update-environment: true
 
+      # Nothing below this point needs a third-party package: the lifecycle suite depends
+      # only on the standard library. This step exists purely to record when the ecosystem
+      # has caught up enough for 3.15 to join the matrix.
+      #
+      # --only-binary and --dry-run are load-bearing, not tidiness. Without them pip
+      # responds to a missing wheel by fetching the sdist and building it — pyarrow and
+      # matplotlib are large C++ builds and torch is enormous — or by backtracking through
+      # hundreds of releases hunting for a compatible one. Either takes tens of minutes.
+      # The timeout is a backstop in case a future pip finds another way to be slow.
       - name: Report interpreter and wheel availability
         shell: bash
         run: |
           python -VV
           python -m pip install --upgrade pip
 
-          # Installed individually and tolerantly: a missing wheel is expected on a new
-          # release and must not fail the job, but which ones are missing is worth seeing.
           for pkg in numpy pandas polars pyarrow matplotlib torch; do
-            if python -m pip install --quiet "$pkg" 2>/dev/null; then
+            if timeout 90 python -m pip install --only-binary=:all: --dry-run --quiet "$pkg" 2>/dev/null; then
               echo "  available  $pkg"
             else
               echo "  missing    $pkg (no 3.15 wheel yet)"
