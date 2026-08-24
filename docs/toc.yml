@@ -1,0 +1,18 @@
+# Section navigation for the documentation site. The order is deliberate: interpreter
+# setup first, then runtime concerns, then the plugin packages.
+- name: Virtual environments and isolation
+  href: virtual-environments.md
+- name: Async hosting
+  href: async-hosting.md
+- name: Performance
+  href: performance.md
+- name: Observability
+  href: observability.md
+- name: NumPy
+  href: numpy.md
+- name: DataFrames
+  href: dataframes.md
+- name: PyTorch
+  href: torch.md
+- name: Matplotlib
+  href: matplotlib.md

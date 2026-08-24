@@ -490,3 +490,8 @@ $RECYCLE.BIN/
 
 # Microsoft.Testing.Platform first-run sentinels
 /Microsoft/TestingPlatform/
+
+# DocFX generated output. The API reference is derived from the source on every build,
+# and the rendered site is published to GitHub Pages by the docs workflow.
+docfx/_site/
+docfx/api/
