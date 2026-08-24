@@ -17,12 +17,12 @@ public sealed class KwargsCallTests
 
         using var interp = PyRuntime.CreateInterpreter();
         interp.Execute("""
-            def greet(name, greeting="Hello"):
+            def kw_greet(name, greeting="Hello"):
                 return f"{greeting}, {name}!"
             """);
 
         using var module = interp.ImportModule("__main__");
-        using var result = module.Call("greet", ["World"], new Dictionary<string, object?> { ["greeting"] = "Hi" });
+        using var result = module.Call("kw_greet", ["World"], new Dictionary<string, object?> { ["greeting"] = "Hi" });
 
         await Assert.That(result.ToString()).IsEqualTo("Hi, World!");
     }
@@ -34,12 +34,12 @@ public sealed class KwargsCallTests
 
         using var interp = PyRuntime.CreateInterpreter();
         interp.Execute("""
-            def add(a, b=0, c=0):
+            def kw_add(a, b=0, c=0):
                 return a + b + c
             """);
 
         using var module = interp.ImportModule("__main__");
-        using var func = module.GetFunction("add");
+        using var func = module.GetFunction("kw_add");
         var result = func.Call<int>(
             [10],
             new Dictionary<string, object?> { ["b"] = 20, ["c"] = 12 });
@@ -54,12 +54,12 @@ public sealed class KwargsCallTests
 
         using var interp = PyRuntime.CreateInterpreter();
         interp.Execute("""
-            def multiply(x, factor=1):
+            def kw_multiply(x, factor=1):
                 return x * factor
             """);
 
         using var module = interp.ImportModule("__main__");
-        using PyObject func = module.GetFunction("multiply");
+        using PyObject func = module.GetFunction("kw_multiply");
         using var result = func.Call(
             [6],
             new Dictionary<string, object?> { ["factor"] = 7 });
@@ -74,12 +74,12 @@ public sealed class KwargsCallTests
 
         using var interp = PyRuntime.CreateInterpreter();
         interp.Execute("""
-            def square(n):
+            def kw_square(n):
                 return n * n
             """);
 
         using var module = interp.ImportModule("__main__");
-        using var func = module.GetFunction("square");
+        using var func = module.GetFunction("kw_square");
         var result = func.Call<int>([9], new Dictionary<string, object?>());
 
         await Assert.That(result).IsEqualTo(81);

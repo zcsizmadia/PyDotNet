@@ -106,12 +106,12 @@ public sealed class CancellationTests
 
         using var interp = PyRuntime.CreateInterpreter();
         interp.Execute("""
-            async def add(a, b):
+            async def cx_add(a, b):
                 return a + b
             """);
 
         using var module = interp.ImportModule("__main__");
-        using var func = module.GetFunction("add");
+        using var func = module.GetFunction("cx_add");
 
         var result = await func.CallAsync<int>(new object?[] { 10, 32 }, CancellationToken.None);
         await Assert.That(result).IsEqualTo(42);
@@ -124,7 +124,7 @@ public sealed class CancellationTests
 
         using var interp = PyRuntime.CreateInterpreter();
         interp.Execute("""
-            async def add(a, b):
+            async def cx_add(a, b):
                 return a + b
             """);
 
@@ -133,7 +133,7 @@ public sealed class CancellationTests
         cts.Cancel();
 
         await Assert.That(async () =>
-            await module.CallAsync<int>("add", new object?[] { 1, 2 }, cts.Token))
+            await module.CallAsync<int>("cx_add", new object?[] { 1, 2 }, cts.Token))
             .Throws<OperationCanceledException>();
     }
 
@@ -144,13 +144,13 @@ public sealed class CancellationTests
 
         using var interp = PyRuntime.CreateInterpreter();
         interp.Execute("""
-            async def multiply(a, b):
+            async def cx_multiply(a, b):
                 return a * b
             """);
 
         using var module = interp.ImportModule("__main__");
 
-        var result = await module.CallAsync<int>("multiply", new object?[] { 6, 7 }, CancellationToken.None);
+        var result = await module.CallAsync<int>("cx_multiply", new object?[] { 6, 7 }, CancellationToken.None);
         await Assert.That(result).IsEqualTo(42);
     }
 
