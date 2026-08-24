@@ -15,6 +15,10 @@ internal static partial class Log
     [LoggerMessage(Level = LogLevel.Debug, Message = "PyDotNet: Py_Initialize() called.")]
     internal static partial void PyInitializeCalled(this ILogger logger);
 
+    [LoggerMessage(Level = LogLevel.Debug,
+        Message = "PyDotNet: Py_InitializeFromInitConfig() called (PEP 741 configuration API).")]
+    internal static partial void InitializedFromInitConfig(this ILogger logger);
+
     [LoggerMessage(Level = LogLevel.Debug, Message = "PyDotNet: CPython was already initialized by another component.")]
     internal static partial void PythonAlreadyInitialized(this ILogger logger);
 

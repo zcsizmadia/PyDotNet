@@ -130,3 +130,102 @@ jobs:
           name: nuget-packages
           path: |
             nupkgs/*.nupkg
+
+  # Python 3.15 is still a release candidate (final: 2026-10-01), so it is kept out of the
+  # matrix above and cannot fail the build. Two reasons, both temporary:
+  #
+  #   * Third-party wheels lag a new release. At 3.15.0rc1 numpy, pandas and polars are
+  #     available but pyarrow, matplotlib and torch are not, so the plugin test projects
+  #     cannot run at all.
+  #   * A release candidate can change under us, and that should not block an unrelated
+  #     pull request.
+  #
+  # What it does cover is exactly what changes between versions: interpreter configuration.
+  # 3.15 removed Py_SetProgramName and the isolation globals from the headers, so this job
+  # is what proves PyDotNet still initializes, activates a virtual environment, and applies
+  # isolation there — via PyInitConfig (PEP 741) rather than the legacy symbols.
+  #
+  # Promote this into the matrix once 3.15 is final and the wheels have caught up.
+  prerelease:
+    runs-on: ubuntu-latest
+    name: Build - Python 3.15 (prerelease, informational)
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install .NET SDKs
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Set up Python 3.15
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.15'
+          allow-prereleases: true
+          update-environment: true
+
+      # Nothing below this point needs a third-party package: the lifecycle suite depends
+      # only on the standard library. This step exists purely to record when the ecosystem
+      # has caught up enough for 3.15 to join the matrix.
+      #
+      # --only-binary and --dry-run are load-bearing, not tidiness. Without them pip
+      # responds to a missing wheel by fetching the sdist and building it — pyarrow and
+      # matplotlib are large C++ builds and torch is enormous — or by backtracking through
+      # hundreds of releases hunting for a compatible one. Either takes tens of minutes.
+      # The timeout is a backstop in case a future pip finds another way to be slow.
+      - name: Report interpreter and wheel availability
+        shell: bash
+        run: |
+          python -VV
+          python -m pip install --upgrade pip
+
+          for pkg in numpy pandas polars pyarrow matplotlib torch; do
+            if timeout 90 python -m pip install --only-binary=:all: --dry-run --quiet "$pkg" 2>/dev/null; then
+              echo "  available  $pkg"
+            else
+              echo "  missing    $pkg (no 3.15 wheel yet)"
+            fi
+          done
+
+      - name: Build
+        shell: bash
+        run: |
+          dotnet restore
+          dotnet build -c Release --no-restore
+
+      # Only the lifecycle project runs. It depends on nothing beyond the standard library,
+      # so a failure here is a genuine incompatibility rather than a missing wheel.
+      - name: Test interpreter lifecycle
+        shell: bash
+        run: |
+          dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build
+
+      - name: Test virtual environment activation
+        shell: bash
+        run: |
+          VENV="${RUNNER_TEMP}/pydotnet-test-venv"
+          python -m venv "$VENV"
+          VENV_PY="$VENV/bin/python"
+          SITE_PACKAGES=$("$VENV_PY" -c "import sysconfig; print(sysconfig.get_paths()['purelib'])")
+          echo "MARKER = 'pydotnet'" > "$SITE_PACKAGES/pydotnet_venv_marker.py"
+
+          if python -c "import pydotnet_venv_marker" 2>/dev/null; then
+            echo "::error::Marker module leaked into the base interpreter; the test would prove nothing."
+            exit 1
+          fi
+
+          PYDOTNET_TEST_VENV="$VENV" dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build \
+            -- --treenode-filter "/*/*/VirtualEnvironmentActivation/*"
+
+      - name: Test interpreter isolation
+        shell: bash
+        env:
+          PYDOTNET_TEST_ISOLATION: "1"
+        run: |
+          dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build \
+            -- --treenode-filter "/*/*/IsolationActivation/*"
