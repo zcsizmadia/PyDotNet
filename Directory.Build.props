@@ -21,6 +21,34 @@
     <RepositoryUrl>https://github.com/zcsizmadia/PyDotNet</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/zcsizmadia/PyDotNet</PackageProjectUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <!-- Debuggability of published packages.
+       SourceLink ships in the .NET 8+ SDK, so no PackageReference is needed — these
+       properties are what activate it. Symbol packages let consumers step into PyDotNet
+       itself, which matters most for a library whose failures surface at the native
+       interop boundary, where a stack trace alone rarely explains anything. -->
+  <PropertyGroup>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <!-- Normalises embedded paths so a given commit packs to identical bytes. -->
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <!-- Compares every packable project against the last published version and fails the
+       build on an unintended breaking API change, rather than leaving it to whoever reads
+       the diff. Ignored by projects that do not pack.
+
+       Raise the baseline as part of any release that introduces a deliberate break; a
+       break that is genuinely intended is recorded by regenerating the suppression file
+       with -p:ApiCompatGenerateSuppressionFile=true. -->
+  <PropertyGroup>
+    <EnablePackageValidation>true</EnablePackageValidation>
+    <PackageValidationBaselineVersion>1.1.0</PackageValidationBaselineVersion>
   </PropertyGroup>
 
   <ItemGroup>
