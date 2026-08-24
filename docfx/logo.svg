@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 62" role="img" aria-label="PyDotNet">
+  <title>PyDotNet</title>
+  <!--
+    Horizontal lockup for the site header: the sharp mark plus the wordmark.
+
+    The interlace is paint order — yellow bar, blue upright, blue bar, yellow upright — so
+    each snake passes over once and under once. The uprights fall to the right over their
+    length, which slants the mark like a typeset # and keeps two straight lines from
+    reading as a grid.
+
+    The wordmark takes currentColor so the lockup works on either theme without a second
+    file. The small-size mark, without eyes, is favicon.svg.
+  -->
+  <g fill="none" stroke-width="7" stroke-linecap="round" transform="translate(2,6)">
+    <path d="M4 19 H44" stroke="#FFD34E"/>
+    <path d="M22 3 L17 47" stroke="#3C7EB8"/>
+    <path d="M4 32 H44" stroke="#3C7EB8"/>
+    <path d="M33 3 L28 47" stroke="#FFD34E"/>
+  </g>
+  <!-- Eyes at opposite ends, echoing the rotational symmetry of the Python mark. -->
+  <circle cx="24.2" cy="11.4" r="1.7" fill="#FFFFFF"/>
+  <circle cx="30.8" cy="50.6" r="1.7" fill="#2C3140"/>
+
+  <text x="64" y="42" font-family="Archivo, Segoe UI, -apple-system, BlinkMacSystemFont, Helvetica Neue, Arial, sans-serif"
+        font-size="31" font-weight="700" letter-spacing="-0.6" fill="currentColor">PyDotNet</text>
+</svg>

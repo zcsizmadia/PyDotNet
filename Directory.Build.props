@@ -21,6 +21,9 @@
     <RepositoryUrl>https://github.com/zcsizmadia/PyDotNet</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- NuGet accepts PNG or JPEG only, so this is the rasterised form of the mark in
+         docfx/. Without it, listings fall back to a grey placeholder. -->
+    <PackageIcon>icon.png</PackageIcon>
     <PackageProjectUrl>https://github.com/zcsizmadia/PyDotNet</PackageProjectUrl>
     <RepositoryType>git</RepositoryType>
     <!-- Points at the changelog rather than restating it: release notes embedded in a
@@ -59,5 +62,6 @@
     <!-- MSBuildThisFileDirectory is the repo root, so the path is always correct  -->
     <!-- regardless of how deeply nested the project file is.                       -->
     <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="/" />
+    <None Include="$(MSBuildThisFileDirectory)icon.png" Pack="true" PackagePath="/" />
   </ItemGroup>
 </Project>

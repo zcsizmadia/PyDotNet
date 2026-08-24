@@ -44,11 +44,18 @@
         "dest": "guides"
       }
     ],
+    "resource": [
+      {
+        "files": [ "logo.svg", "favicon.svg" ]
+      }
+    ],
     "output": "_site",
     "template": [ "default", "modern" ],
     "globalMetadata": {
       "_appName": "PyDotNet",
       "_appTitle": "PyDotNet",
+      "_appLogoPath": "logo.svg",
+      "_appFaviconPath": "favicon.svg",
       "_enableSearch": true,
       "_disableContribution": false,
       "_gitContribute": {
