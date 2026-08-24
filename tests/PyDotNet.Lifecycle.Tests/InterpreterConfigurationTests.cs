@@ -111,6 +111,50 @@ public sealed class InterpreterConfigurationTests
     }
 
     /// <summary>
+    /// The effective configuration must describe the interpreter that is actually running,
+    /// so every field is checked against the interpreter itself rather than against the
+    /// options that were requested — which would only prove the record was copied.
+    /// </summary>
+    [Test]
+    public async Task EffectiveConfiguration_DescribesTheRunningInterpreter()
+    {
+        InitializeOrSkip();
+
+        var configuration = PyRuntime.EffectiveConfiguration;
+        await Assert.That(configuration).IsNotNull();
+
+        using var interpreter = PyRuntime.CreateInterpreter();
+
+        // The version PyDotNet recorded is the version Python reports for itself.
+        //
+        // Compared against sys.version rather than sys.version_info, because the release
+        // level matters: version_info[:3] renders 3.15.0rc1 as "3.15.0", which would hide
+        // that the interpreter is a release candidate — exactly the kind of thing this
+        // record exists to surface.
+        interpreter.Execute("import sys");
+        using var reported = interpreter.Evaluate("sys.version.split()[0]");
+        await Assert.That(configuration!.PythonVersion).IsEqualTo(reported.As<string>());
+
+        // The library it loaded is the one it says it loaded.
+        await Assert.That(configuration.LibraryPath).IsNotNull().And.IsNotEmpty();
+        await Assert.That(File.Exists(configuration.LibraryPath)).IsTrue();
+
+        await Assert.That(configuration.IsGilEnabled).IsEqualTo(PyRuntime.IsGilEnabled);
+
+        // No interpreter configuration was requested by this fixture, so none should be
+        // reported — a record that echoed defaults back would pass a weaker assertion.
+        await Assert.That(configuration.ProgramName).IsNull();
+        await Assert.That(configuration.VirtualEnvironmentPath).IsNull();
+        await Assert.That(configuration.VirtualEnvironmentWarning).IsNull();
+
+        // UsedInitConfig must track the interpreter's capability, not a stored flag.
+        var expectsInitConfig = PythonInitConfig.SupportsInitConfig(PyRuntime.NativeLibraryHandle);
+        await Assert.That(configuration.UsedInitConfig).IsEqualTo(expectsInitConfig);
+
+        await Assert.That(configuration.ToString()).Contains(configuration.PythonVersion);
+    }
+
+    /// <summary>
     /// <see cref="PyRuntime.IsGilEnabled"/> is checked against the interpreter's own build
     /// configuration rather than against <c>sys._is_gil_enabled()</c>, which is the call
     /// the detection already makes — comparing those two would only prove the code agrees
