@@ -184,7 +184,7 @@ public sealed class PyModule : PyObject
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(functionName);
         IntPtr coroutine;
-        using (var gil = new GilScope())
+        using (new GilScope())
         {
             coroutine = CallToCoroutine(functionName, args, kwargs: null);
         }
@@ -200,7 +200,7 @@ public sealed class PyModule : PyObject
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(functionName);
         IntPtr coroutine;
-        using (var gil = new GilScope())
+        using (new GilScope())
         {
             coroutine = CallToCoroutine(functionName, args, kwargs: null);
         }
@@ -219,7 +219,7 @@ public sealed class PyModule : PyObject
         ArgumentException.ThrowIfNullOrWhiteSpace(functionName);
         ArgumentNullException.ThrowIfNull(kwargs);
         IntPtr coroutine;
-        using (var gil = new GilScope())
+        using (new GilScope())
         {
             coroutine = CallToCoroutine(functionName, args, kwargs);
         }
@@ -239,7 +239,7 @@ public sealed class PyModule : PyObject
         ArgumentException.ThrowIfNullOrWhiteSpace(functionName);
         ArgumentNullException.ThrowIfNull(kwargs);
         IntPtr coroutine;
-        using (var gil = new GilScope())
+        using (new GilScope())
         {
             coroutine = CallToCoroutine(functionName, args, kwargs);
         }
@@ -254,7 +254,7 @@ public sealed class PyModule : PyObject
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(functionName);
         IntPtr coroutine;
-        using (var gil = new GilScope())
+        using (new GilScope())
         {
             coroutine = CallToCoroutine(functionName, args, kwargs: null);
         }
@@ -269,7 +269,7 @@ public sealed class PyModule : PyObject
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(functionName);
         IntPtr coroutine;
-        using (var gil = new GilScope())
+        using (new GilScope())
         {
             coroutine = CallToCoroutine(functionName, args, kwargs: null);
         }
@@ -288,7 +288,7 @@ public sealed class PyModule : PyObject
         ArgumentException.ThrowIfNullOrWhiteSpace(functionName);
         ArgumentNullException.ThrowIfNull(kwargs);
         IntPtr coroutine;
-        using (var gil = new GilScope())
+        using (new GilScope())
         {
             coroutine = CallToCoroutine(functionName, args, kwargs);
         }
@@ -309,7 +309,7 @@ public sealed class PyModule : PyObject
         ArgumentException.ThrowIfNullOrWhiteSpace(functionName);
         ArgumentNullException.ThrowIfNull(kwargs);
         IntPtr coroutine;
-        using (var gil = new GilScope())
+        using (new GilScope())
         {
             coroutine = CallToCoroutine(functionName, args, kwargs);
         }
@@ -325,7 +325,7 @@ public sealed class PyModule : PyObject
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(functionName);
         IntPtr asyncIter;
-        using (var gil = new GilScope())
+        using (new GilScope())
         {
             asyncIter = CreateIterator(functionName, args, kwargs: null);
         }
@@ -345,7 +345,7 @@ public sealed class PyModule : PyObject
         ArgumentException.ThrowIfNullOrWhiteSpace(functionName);
         ArgumentNullException.ThrowIfNull(kwargs);
         IntPtr asyncIter;
-        using (var gil = new GilScope())
+        using (new GilScope())
         {
             asyncIter = CreateIterator(functionName, args, kwargs);
         }

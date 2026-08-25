@@ -379,7 +379,7 @@ public static class PyRuntime
         // observe partially initialized transitive modules (notably typing and
         // dataclasses). Warming the module here also removes first-call latency from
         // the async bridge.
-        using (var gil = new GilScope())
+        using (new GilScope())
         {
             AsyncBridge.WarmUp();
             if (options.ReleaseGilAfterInit)

@@ -131,7 +131,7 @@ public sealed class PyInterpreter : IDisposable
         PyRuntime.EnsureInitialized();
 
         IntPtr coroutine;
-        using (var gil = new GilScope())
+        using (new GilScope())
         {
             var mainModule = NativeMethods.PyImport_AddModule("__main__"); // borrowed
             var globals = NativeMethods.PyModule_GetDict(mainModule);      // borrowed
@@ -162,7 +162,7 @@ public sealed class PyInterpreter : IDisposable
         PyRuntime.EnsureInitialized();
 
         IntPtr coroutine;
-        using (var gil = new GilScope())
+        using (new GilScope())
         {
             var mainModule = NativeMethods.PyImport_AddModule("__main__"); // borrowed
             var globals = NativeMethods.PyModule_GetDict(mainModule);      // borrowed

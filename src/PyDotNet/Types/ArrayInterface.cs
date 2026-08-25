@@ -164,7 +164,7 @@ public sealed class ArrayInterfaceInfo
             readOnly = NativeMethods.PyObject_IsTrue(roItem) != 0;
         }
 
-        return (IntPtr)ptr;
+        return ptr;
     }
 
     private static long[] ReadShapeTuple(IntPtr iface)

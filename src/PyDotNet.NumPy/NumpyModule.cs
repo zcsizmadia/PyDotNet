@@ -175,7 +175,7 @@ public sealed class NumpyModule : IDisposable
         PyObject arr;
         try
         {
-            arr = _fromPtrFunc.Call(ptr, count, dtype, (object?)shape);
+            arr = _fromPtrFunc.Call(ptr, count, dtype, shape);
         }
         catch
         {
@@ -459,7 +459,7 @@ public sealed class NumpyModule : IDisposable
     {
         ArgumentNullException.ThrowIfNull(a);
         ArgumentNullException.ThrowIfNull(reps);
-        return new NdArray(_np.Call("tile", a.PyObject, (object?)reps));
+        return new NdArray(_np.Call("tile", a.PyObject, reps));
     }
 
     // ── IDisposable ───────────────────────────────────────────────────────

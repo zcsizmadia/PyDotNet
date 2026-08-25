@@ -619,7 +619,7 @@ public sealed class PyTorchTensor : PyTensor
         using var torchMod = interp.ImportModule("torch");
         using var dtypeObj = torchMod.GetAttr(TensorDataTypeToTorchString(dtype));
         var kwargs = new Dictionary<string, object?> { ["dtype"] = dtypeObj };
-        using var result = torchMod.Call("full", [(object?)shape, (object?)(double)fillValue], kwargs);
+        using var result = torchMod.Call("full", [shape, (double)fillValue], kwargs);
         return From(result);
     }
 

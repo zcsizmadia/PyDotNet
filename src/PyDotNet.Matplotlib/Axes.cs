@@ -190,7 +190,7 @@ public sealed class Axes : IDisposable
         }
 
         var kwargs = new Dictionary<string, object?> { ["cmap"] = colorMap, ["aspect"] = aspect };
-        CallAxesMethod("imshow", [(object?)jagged], kwargs);
+        CallAxesMethod("imshow", [jagged], kwargs);
     }
 
     /// <summary>
@@ -205,7 +205,7 @@ public sealed class Axes : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         var kwargs = new Dictionary<string, object?> { ["tick_labels"] = labels };
-        CallAxesMethod("boxplot", [(object?)data], kwargs);
+        CallAxesMethod("boxplot", [data], kwargs);
     }
 
     /// <summary>
