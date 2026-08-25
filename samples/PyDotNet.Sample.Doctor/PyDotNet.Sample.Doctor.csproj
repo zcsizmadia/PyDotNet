@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>$(DefaultTargetFramework)</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>PyDotNet.Sample.Doctor</RootNamespace>
+    <AssemblyName>PyDotNet.Sample.Doctor</AssemblyName>
+    <Description>Prints the PyDotNet diagnostics report for the interpreter this machine resolves.</Description>
+    <!-- Samples are not production code — relax some warnings. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/PyDotNet/PyDotNet.csproj" />
+  </ItemGroup>
+
+</Project>

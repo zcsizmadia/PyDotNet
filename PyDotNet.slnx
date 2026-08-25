@@ -36,6 +36,7 @@
     <Project Path="samples/PyDotNet.Sample.Gpu/PyDotNet.Sample.Gpu.csproj" />
     <Project Path="samples/PyDotNet.Sample.VirtualEnvironment/PyDotNet.Sample.VirtualEnvironment.csproj" />
     <Project Path="samples/PyDotNet.Sample.Isolation/PyDotNet.Sample.Isolation.csproj" />
+    <Project Path="samples/PyDotNet.Sample.Doctor/PyDotNet.Sample.Doctor.csproj" />
   </Folder>
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks/PyDotNet.Benchmarks/PyDotNet.Benchmarks.csproj" />

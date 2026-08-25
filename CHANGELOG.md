@@ -41,6 +41,14 @@ previously published version, and the build fails on an unintended breaking API 
 - **Marshaling for `BigInteger`, `Guid`, `DateOnly` and `TimeOnly`**, mapping to Python
   `int`, `uuid.UUID`, `datetime.date` and `datetime.time`.
   ([#65](https://github.com/zcsizmadia/PyDotNet/issues/65))
+- **`PyRuntime.WriteDiagnosticsReport(TextWriter)`** and `GetDiagnosticsReport()` print what
+  the process actually resolved: the effective configuration, `sys.path` in search order
+  with the caller's own entries flagged, `sys.prefix` against `sys.base_prefix` so an
+  inactive virtual environment is visible, and the isolation flags CPython settled on. Any
+  virtual environment mismatch warning is printed first. It never throws and does not
+  require initialization — a process whose `Initialize` failed is precisely when it is
+  wanted. A `PyDotNet.Sample.Doctor` sample prints it for any environment and exits
+  non-zero when something is wrong. ([#70](https://github.com/zcsizmadia/PyDotNet/issues/70))
 - **Typed Python exceptions.** `PyValueError`, `PyTypeError`, `PyKeyError`, `PyIndexError`,
   `PyAttributeError`, `PyImportError`, `PyModuleNotFoundError`, `PyOSError` and
   `PyStopIteration` can be caught by type instead of by comparing `PythonExceptionType`

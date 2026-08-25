@@ -181,6 +181,60 @@ base installation than the library that was loaded — the mismatch described un
 [Troubleshooting](#troubleshooting). Reading it there is more reliable than relying on the
 log, since the default `ILogger` discards everything.
 
+### The diagnostics report
+
+`EffectiveConfiguration` records what PyDotNet asked for. It cannot say what CPython then
+did with it — that takes reading the live interpreter, which is what
+`PyRuntime.WriteDiagnosticsReport` does:
+
+```csharp
+PyRuntime.WriteDiagnosticsReport(Console.Out);
+```
+
+```
+Requested configuration
+  Program name             /srv/myapp/.venv/bin/python
+  Virtual environment      /srv/myapp/.venv
+  Additional sys.path      1 entry, prepended
+
+Interpreter
+  sys.executable           /srv/myapp/.venv/bin/python
+  sys.prefix               /srv/myapp/.venv
+  sys.base_prefix          /usr
+  Virtual environment      active (sys.prefix differs from sys.base_prefix)
+
+Isolation (sys.flags)
+  isolated                 0
+  no_site                  0
+  no_user_site             0
+  ignore_environment       0
+  safe_path                0
+
+sys.path (7 entries, in search order)
+    1  /opt/myapp/overrides   <- added by PyDotNet
+    2  /usr/lib/python314.zip
+  ...
+```
+
+The three sections answer the three questions this page keeps returning to. **Requested
+against Interpreter** is the venv-not-active case below, already compared for you.
+**Isolation** reports what CPython settled on rather than what was asked for. **`sys.path`
+in search order** is the only view that shows position, which is what decides a shadowed
+import; entries you supplied are flagged, and any that never reached `sys.path` are called
+out separately.
+
+Any `VirtualEnvironmentWarning` is printed first, under a `!! WARNING` banner, so it is not
+missed. The report never throws and works before initialization — a process whose
+`Initialize` failed is exactly when it earns its keep.
+
+`PyRuntime.GetDiagnosticsReport()` returns the same text as a string, for a startup log,
+a diagnostics endpoint, or a bug report. The `PyDotNet.Sample.Doctor` sample prints it for
+any environment you point it at and exits non-zero when something is wrong:
+
+```bash
+dotnet run --project samples/PyDotNet.Sample.Doctor -- /srv/myapp/.venv
+```
+
 ## Constraints
 
 **These settings apply once per process.** CPython reads them during `Py_Initialize()`, and
@@ -233,7 +287,9 @@ enough — symlinks, framework builds, multiarch prefixes — that failing initi
 would reject working configurations.
 
 **Packages resolve from the wrong interpreter.** Check `sys.prefix` and `sys.base_prefix`
-from inside PyDotNet. If they are equal, no virtual environment is active.
+from inside PyDotNet. If they are equal, no virtual environment is active. The
+[diagnostics report](#the-diagnostics-report) makes that comparison for you, alongside the
+`sys.path` ordering that decides which copy of a module wins.
 
 ## Python version support
 
