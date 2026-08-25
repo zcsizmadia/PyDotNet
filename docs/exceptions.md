@@ -155,6 +155,11 @@ catch (PyModuleNotFoundError ex)
 }
 ```
 
+When the properties are not enough — the module ought to be importable and the paths look
+right — `PyRuntime.WriteDiagnosticsReport` prints `sys.path` in search order and compares
+`sys.prefix` against `sys.base_prefix`, which is where a configured virtual environment that
+never actually activated shows up.
+
 See [Virtual environments and isolation](virtual-environments.md) for how the interpreter
 is chosen in the first place.
 

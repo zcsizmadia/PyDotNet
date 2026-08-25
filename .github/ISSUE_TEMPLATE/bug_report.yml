@@ -30,16 +30,29 @@ body:
       required: true
 
   - type: textarea
-    id: effective-configuration
+    id: diagnostics-report
     attributes:
-      label: Effective configuration
+      label: Diagnostics report
       description: |
-        Output of `Console.WriteLine(PyRuntime.EffectiveConfiguration);` after `Initialize`.
+        Output of `PyRuntime.WriteDiagnosticsReport(Console.Out);` — it works even when
+        `Initialize` failed, which is often the interesting case.
 
         This records the interpreter that was actually resolved — library path, version,
-        program name, `sys.path` entries and placement, GIL state — which is usually the
-        first thing worth checking when imports resolve from somewhere unexpected.
-      placeholder: Python 3.14.4 [GIL] via PyInitConfig; library '...'; program name ...
+        `sys.path` in search order, `sys.prefix` against `sys.base_prefix`, and the
+        isolation flags. It answers most of what a maintainer would otherwise have to ask
+        for one question at a time.
+
+        `dotnet run --project samples/PyDotNet.Sample.Doctor` prints the same report if it
+        is easier to run than to add a call.
+      placeholder: |
+        PyDotNet diagnostics report
+        ===========================
+
+        Runtime
+          State                    Running
+          Python                   3.14.4
+          Library                  /usr/lib/libpython3.14.so
+        ...
       render: text
     validations:
       required: false

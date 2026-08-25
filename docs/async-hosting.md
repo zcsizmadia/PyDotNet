@@ -54,6 +54,12 @@ calling `Shutdown` when they require a bounded shutdown deadline. PyDotNet delib
 drains already-admitted operations until `AsyncShutdownTimeout`; it then cancels remaining
 Python futures and waits for their cancellation cleanup.
 
+In an application with a `Microsoft.Extensions.Hosting` host, `services.AddPyDotNet()` runs
+this drain from an `IHostedService`, so shutdown ordering belongs to the host and there is
+no `Shutdown` call to place on every exit path. The host's own shutdown timeout applies on
+top of `AsyncShutdownTimeout`, and the shorter of the two wins — see
+[Hosting and dependency injection](hosting.md).
+
 ## Metrics
 
 The `PyDotNet` meter publishes `pydotnet.async.active`, `pydotnet.async.waiting`, and

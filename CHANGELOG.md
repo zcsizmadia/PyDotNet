@@ -24,7 +24,6 @@ previously published version, and the build fails on an unintended breaking API 
 - **Symbol packages and SourceLink**, so consumers can step into PyDotNet source while
   debugging — which matters most at the native interop boundary, where a managed stack
   trace rarely explains anything on its own. ([#49](https://github.com/zcsizmadia/PyDotNet/pull/49))
-
 - **`PyRuntime.EffectiveConfiguration`** reports what interpreter was actually resolved —
   library, version, program name, `sys.path` entries and placement, GIL state, and which
   initialization API ran. Interpreter discovery has several fallbacks, so the interpreter a
@@ -156,6 +155,13 @@ previously published version, and the build fails on an unintended breaking API 
 - An [Exception handling](docs/exceptions.md) guide covering the typed exceptions, how MRO
   matching picks one, and how Python's two chaining mechanisms map onto `InnerException`.
   ([#67](https://github.com/zcsizmadia/PyDotNet/issues/67))
+- The bug report template now asks for the diagnostics report rather than the
+  single-line effective configuration, and `CONTRIBUTING.md` points at the doctor sample —
+  both answer "which interpreter did you actually get?" without a round trip.
+- The roadmap and the feature table now match what shipped: callbacks, typed exceptions,
+  hosting integration, the diagnostics report and the DataFrame verbs moved out of
+  "planned", and what genuinely remains — async callbacks, DataFrame reshaping — is listed
+  in their place.
 
 ### Internal
 
