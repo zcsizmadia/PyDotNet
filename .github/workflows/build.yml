@@ -104,16 +104,34 @@ jobs:
           dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build \
             -- --treenode-filter "/*/*/IsolationActivation/*"
 
-      # sys.path is arranged once, during initialization, so each placement needs its own
-      # process — hence two invocations rather than one filter covering both.
+      # sys.path is arranged once, during initialization, and these tests each configure it
+      # differently, so every one needs its own process. That rules out the single
+      # class-wildcard filter the neighbouring gated steps use.
+      #
+      # The list is discovered rather than written out. Hardcoded names meant a test added
+      # to this class ran nowhere: the unfiltered Test step skips it (the gate variable is
+      # unset) and a fixed loop never named it, so CI stayed green while covering nothing.
       - name: Test sys.path placement
         shell: bash
         env:
           PYDOTNET_TEST_SYSPATH: "1"
         run: |
-          for test in Prepend_TakesPrecedenceOverTheStandardLibrary Append_IsTheDefault_AndDoesNotShadow; do
-            dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build \
-              -- --treenode-filter "/*/*/SysPathPlacementTests/$test"
+          cd tests/PyDotNet.Lifecycle.Tests
+
+          TESTS=$(dotnet run -c Release --no-build -f net10.0 -- \
+                    --list-tests --treenode-filter "/*/*/SysPathPlacementTests/*" \
+                  | sed -n 's/^  \([A-Za-z_][A-Za-z0-9_]*\)$/\1/p')
+
+          if [ -z "$TESTS" ]; then
+            echo "::error::Discovered no SysPathPlacementTests. The filter or the class name has changed."
+            exit 1
+          fi
+
+          echo "Discovered:"; echo "$TESTS" | sed 's/^/  /'
+
+          for test in $TESTS; do
+            echo "--- $test ---"
+            dotnet test -c Release --no-build -- --treenode-filter "/*/*/SysPathPlacementTests/$test"
           done
 
       - name: Run samples
@@ -245,6 +263,30 @@ jobs:
         run: |
           dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build \
             -- --treenode-filter "/*/*/IsolationActivation/*"
+
+      # sys.path placement, discovered the same way as in the main matrix job. The
+      # prerelease job carried the venv and isolation gated steps but not this one, so
+      # neither placement was exercised against upcoming Python versions.
+      - name: Test sys.path placement
+        shell: bash
+        env:
+          PYDOTNET_TEST_SYSPATH: "1"
+        run: |
+          cd tests/PyDotNet.Lifecycle.Tests
+
+          TESTS=$(dotnet run -c Release --no-build -f net10.0 -- \
+                    --list-tests --treenode-filter "/*/*/SysPathPlacementTests/*" \
+                  | sed -n 's/^  \([A-Za-z_][A-Za-z0-9_]*\)$/\1/p')
+
+          if [ -z "$TESTS" ]; then
+            echo "::error::Discovered no SysPathPlacementTests. The filter or the class name has changed."
+            exit 1
+          fi
+
+          for test in $TESTS; do
+            echo "--- $test ---"
+            dotnet test -c Release --no-build -- --treenode-filter "/*/*/SysPathPlacementTests/$test"
+          done
 
   # Free-threaded (no-GIL) CPython, which the requirements table advertises as supported.
   # Until now nothing exercised it: PyRuntime.DetectGilEnabled existed but the only test

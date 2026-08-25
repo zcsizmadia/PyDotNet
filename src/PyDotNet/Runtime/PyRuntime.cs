@@ -349,8 +349,9 @@ public static class PyRuntime
             }
         }
 
-        // Recorded last, once everything it describes has settled. Captured while the GIL
+        // Recorded last, once everything they describe has settled. Captured while the GIL
         // is still held here, because reading the version needs it.
+        RecordAppliedConfiguration(options);
         RecordEffectiveConfiguration(options, libraryPath);
 
         if (initializedHere && options.ReleaseGilAfterInit)
@@ -373,6 +374,8 @@ public static class PyRuntime
             ProgramName = _appliedProgramName,
             PythonHome = options.PythonHome is null ? null : Path.GetFullPath(options.PythonHome),
             VirtualEnvironmentPath = options.VirtualEnvironmentPath,
+            AdditionalSysPaths = [.. options.AdditionalSysPaths],
+            SysPathPlacement = options.SysPathPlacement,
             UsedInitConfig = PythonInitConfig.SupportsInitConfig(_nativeLibraryHandle),
             IsGilEnabled = IsGilEnabled,
             VirtualEnvironmentWarning = _virtualEnvironmentWarning,
@@ -405,7 +408,9 @@ public static class PyRuntime
     /// </summary>
     private static void EnsureInterpreterConfigurationUnchanged(PyRuntimeOptions options)
     {
-        if (!options.HasInterpreterConfiguration)
+        // A caller that asked for nothing has had nothing discarded, so a bare
+        // Initialize() after a configured one is still legitimate and silent.
+        if (!options.HasInterpreterConfiguration && !options.HasSysPathConfiguration)
         {
             return;
         }
@@ -419,7 +424,11 @@ public static class PyRuntime
         throw new PyRuntimeException(
             "The PyDotNet runtime is already running with a different interpreter configuration. " +
             "ProgramName, PythonHome, VirtualEnvironmentPath, and Isolation are read by CPython " +
-            "during Py_Initialize() and cannot be changed afterwards in the same process.");
+            "during Py_Initialize() and cannot be changed afterwards in the same process. " +
+            "AdditionalSysPaths and SysPathPlacement are rejected here for a different reason: " +
+            "the runtime is already running, so accepting them silently would leave the caller " +
+            "believing sys.path had been rearranged when it had not. Add paths through the " +
+            "interpreter instead, or configure them on the first Initialize call.");
     }
 
     /// <summary>
@@ -444,8 +453,6 @@ public static class PyRuntime
     {
         if (PythonInitConfig.SupportsInitConfig(_nativeLibraryHandle))
         {
-            RecordAppliedConfiguration(options);
-
             var programName = ResolveAndValidateProgramName(options);
             var pythonHome = options.PythonHome is null ? null : Path.GetFullPath(options.PythonHome);
 
@@ -496,13 +503,17 @@ public static class PyRuntime
     }
 
     /// <summary>
-    /// Stores the signature of the settings CPython is being initialized with, so a later
+    /// Stores the signature of the settings the runtime came up with, so a later
     /// <c>Initialize</c> can tell an idempotent repeat from an attempt to reconfigure.
+    /// <para>
+    /// Recorded unconditionally, and from <c>InitializeCore</c> rather than from the
+    /// interpreter-startup path. The <c>sys.path</c> options apply even when another
+    /// component initialized CPython first, so a signature recorded only on the path
+    /// PyDotNet itself starts would leave those runs with nothing to compare against.
+    /// </para>
     /// </summary>
     private static void RecordAppliedConfiguration(PyRuntimeOptions options) =>
-        _appliedConfigurationSignature = options.HasInterpreterConfiguration
-            ? options.InterpreterConfigurationSignature()
-            : null;
+        _appliedConfigurationSignature = options.InterpreterConfigurationSignature();
 
     /// <summary>
     /// Applies the caller's pre-initialization CPython settings. Must run after the shared
@@ -517,8 +528,6 @@ public static class PyRuntime
     /// </summary>
     private static void ApplyInterpreterConfiguration(PyRuntimeOptions options)
     {
-        RecordAppliedConfiguration(options);
-
         if (!options.HasInterpreterConfiguration)
         {
             return;
@@ -635,8 +644,39 @@ public static class PyRuntime
             throw new PyRuntimeException("Python sys.path is unavailable.");
         }
 
+        var applied = 0;
+
         for (var i = 0; i < paths.Count; i++)
         {
+            // Shutdown deliberately leaves CPython initialized, so a second Initialize
+            // re-runs this against a sys.path that already holds the previous run's
+            // entries. Adding unconditionally grew the list without bound across
+            // Initialize/Shutdown cycles, and every failed import then walked the
+            // duplicates.
+            var existing = IndexOfSysPath(sysPaths, paths[i]);
+
+            if (placement == PySysPathPlacement.Append)
+            {
+                if (existing >= 0)
+                {
+                    continue;
+                }
+            }
+            else if (existing >= 0)
+            {
+                if (existing == i)
+                {
+                    continue;
+                }
+
+                // Present but not where precedence requires — something else has since
+                // been placed ahead of it. Remove it so the insert below restores the
+                // ordering the caller asked for rather than leaving a stale copy behind.
+                PyApi.Status(
+                    NativeMethods.PySequence_DelItem(sysPaths, existing),
+                    "PySequence_DelItem(sys.path)");
+            }
+
             var pyPath = PyApi.NewReference(
                 NativeMethods.PyUnicode_FromString(paths[i]), "PyUnicode_FromString");
             try
@@ -658,9 +698,48 @@ public static class PyRuntime
             {
                 NativeMethods.Py_DecRef(pyPath);
             }
+
+            applied++;
         }
 
-        _logger.AppliedSysPaths(paths.Count, placement);
+        _logger.AppliedSysPaths(applied, placement);
+    }
+
+    /// <summary>
+    /// Returns the index of <paramref name="path"/> in <c>sys.path</c>, or -1.
+    /// <para>
+    /// Entries are compared as paths, so the match is case-insensitive on Windows. The
+    /// caller holds the GIL.
+    /// </para>
+    /// </summary>
+    private static int IndexOfSysPath(IntPtr sysPaths, string path)
+    {
+        var count = NativeMethods.PyList_Size(sysPaths);
+
+        for (nint i = 0; i < count; i++)
+        {
+            var item = NativeMethods.PyList_GetItem(sysPaths, i); // borrowed
+            if (item == IntPtr.Zero)
+            {
+                NativeMethods.PyErr_Clear();
+                continue;
+            }
+
+            var text = NativeMethods.PyUnicode_AsUTF8(item);
+            if (text == IntPtr.Zero)
+            {
+                // Not a string — sys.path may legitimately contain path finder objects.
+                NativeMethods.PyErr_Clear();
+                continue;
+            }
+
+            if (string.Equals(Marshal.PtrToStringUTF8(text), path, PathComparison))
+            {
+                return (int)i;
+            }
+        }
+
+        return -1;
     }
 
     /// <summary>
