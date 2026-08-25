@@ -41,6 +41,23 @@ previously published version, and the build fails on an unintended breaking API 
 - **Marshaling for `BigInteger`, `Guid`, `DateOnly` and `TimeOnly`**, mapping to Python
   `int`, `uuid.UUID`, `datetime.date` and `datetime.time`.
   ([#65](https://github.com/zcsizmadia/PyDotNet/issues/65))
+- **.NET delegates can be passed to Python as callables.** Any `Action` or `Func<>`
+  marshals to a Python function, so a .NET method can go where Python expects one —
+  `key=` to `sorted()`, `DataFrame.apply`, an event handler, a hook, business logic a
+  Python script calls into. `PyObject.FromDelegate` returns the callable directly. Python's
+  argument rules apply: keywords bind by .NET parameter name, omitted parameters take their
+  .NET defaults, and an unsatisfiable call raises `TypeError` rather than being quietly
+  adjusted. Exceptions cross both ways — a .NET exception becomes a Python one, and an
+  exception that started in Python is raised again as the type it was. The delegate's
+  lifetime is Python's reference count, so a callable stored on the Python side keeps
+  working and is released when Python collects it. Delegates returning `Task` or
+  `ValueTask` are rejected with an explanation; asynchronous callbacks are not supported
+  yet. ([#66](https://github.com/zcsizmadia/PyDotNet/issues/66))
+- **Marshaling for strongly typed collections.** `List<T>` and the list interfaces it
+  satisfies convert in both directions, and any `IEnumerable` or `IDictionary` converts to a
+  Python `list` or `dict` — previously only `object`-typed collections and arrays did, which
+  a delegate returning a `List<int>` runs straight into.
+  ([#66](https://github.com/zcsizmadia/PyDotNet/issues/66))
 - **`PyRuntime.WriteDiagnosticsReport(TextWriter)`** and `GetDiagnosticsReport()` print what
   the process actually resolved: the effective configuration, `sys.path` in search order
   with the caller's own entries flagged, `sys.prefix` against `sys.base_prefix` so an
@@ -108,6 +125,9 @@ previously published version, and the build fails on an unintended breaking API 
   ([#46](https://github.com/zcsizmadia/PyDotNet/pull/46))
 - Recorded sub-interpreters and the outstanding smaller items on the roadmap.
   ([#56](https://github.com/zcsizmadia/PyDotNet/pull/56))
+- A [Callbacks](docs/callbacks.md) guide covering the argument rules, the exception mapping
+  in both directions, and what holding the GIL means for a callback.
+  ([#66](https://github.com/zcsizmadia/PyDotNet/issues/66))
 - An [Exception handling](docs/exceptions.md) guide covering the typed exceptions, how MRO
   matching picks one, and how Python's two chaining mechanisms map onto `InnerException`.
   ([#67](https://github.com/zcsizmadia/PyDotNet/issues/67))

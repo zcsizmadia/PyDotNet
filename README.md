@@ -33,6 +33,7 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 - [Runtime lifecycle](#runtime-lifecycle)
 - [Working with Python objects](#working-with-python-objects)
 - [Type marshaling](#type-marshaling)
+- [Callbacks](#callbacks)
 - [Typed Python collections](#typed-python-collections)
 - [Tuple marshaling](#tuple-marshaling)
 - [Weak references](#weak-references)
@@ -442,8 +443,9 @@ Conversion between .NET and Python types is handled automatically in both direct
 | `Guid` | `uuid.UUID` |
 | `Complex` | `complex` |
 | `PyObject` (and subclasses) | passed through as-is (ref-count bumped) |
-| `T[]`, `IEnumerable<object?>` | `list` |
-| `IDictionary<string, object?>` | `dict` |
+| `T[]`, `List<T>`, any `IEnumerable` | `list` |
+| `IDictionary<string, object?>`, any `IDictionary` | `dict` |
+| `Action`, `Func<>` | a callable — see [Callbacks](docs/callbacks.md) |
 
 ### Python → .NET
 
@@ -466,6 +468,7 @@ Specify the target type via `As<T>()` or `Call<T>()`.
 | `Guid` | `uuid.UUID`, `str` |
 | `Complex` | `complex` |
 | `T[]` | `list`, `tuple` |
+| `List<T>`, `IList<T>`, `IReadOnlyList<T>`, `IEnumerable<T>` | `list`, `tuple` |
 | `PyObject` | any (ref-count bumped, caller owns) |
 | `object` | dynamic — best-fit conversion |
 
@@ -473,6 +476,39 @@ Specify the target type via `As<T>()` or `Call<T>()`.
 > `double` or `Int64`.** A `decimal` is usually chosen precisely because binary floating
 > point would lose the value, and a `BigInteger` because 64 bits are not enough — so a
 > numeric hop in either direction would defeat the point of using the type.
+
+---
+
+## Callbacks
+
+.NET methods can be passed where Python expects a callable — `key=` to `sorted()`,
+`DataFrame.apply`, an event handler, a hook, or business logic a Python script calls into:
+
+```csharp
+using var sorted = builtins.Call(
+    "sorted",
+    new object?[] { words },
+    new Dictionary<string, object?> { ["key"] = new Func<string, int>(s => s.Length) });
+```
+
+`PyObject.FromDelegate` returns the callable itself, for holding on to or passing more than
+once. The delegate stays alive for as long as Python holds a reference, and is released
+when Python collects the last one.
+
+Python's argument rules apply: keywords bind by .NET parameter name, omitted parameters
+fall back to their .NET defaults, and a call that cannot be satisfied raises `TypeError`
+rather than being quietly adjusted — including a keyword the delegate has no parameter for,
+which would otherwise be silently discarded.
+
+An exception thrown inside the delegate becomes a Python exception; one that originally came
+from Python is raised again as the type it was, so a round trip does not degrade it. The
+delegate runs with the GIL held, so it can use PyDotNet directly.
+
+Delegates returning `Task` or `ValueTask` are rejected: awaiting a .NET task from Python is
+not supported yet.
+
+See [Callbacks](docs/callbacks.md) for the argument rules, the exception mapping, and the
+GIL implications.
 
 ---
 
@@ -1494,6 +1530,10 @@ dotnet run --project samples/PyDotNet.Sample.Isolation
 # Doctor: report which interpreter this machine resolves, and why an import may not.
 # Takes an optional virtual environment path; exits non-zero when something is wrong.
 dotnet run --project samples/PyDotNet.Sample.Doctor
+
+# Callbacks: hand .NET methods to Python as callables.
+# Covers sorted(key=...), keyword binding, and exceptions in both directions.
+dotnet run --project samples/PyDotNet.Sample.Callbacks
 ```
 
 ### Benchmarks

@@ -178,4 +178,67 @@ public sealed class MarshalingTypeCoverageTests
         await Assert.That(echo.Call<TimeOnly>(value)).IsEqualTo(value);
         await Assert.That(typeName.Call<string>(value)).IsEqualTo("time");
     }
+
+    [Test]
+    public async Task TypedList_RoundTripsThroughPython()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        interp.Execute("""
+            def mtc_echo_sequence(values):
+                return list(values)
+            """);
+
+        using var module = interp.ImportModule("__main__");
+
+        // List<int> is IEnumerable<int>, not IEnumerable<object?>, so it satisfies only the
+        // non-generic interface — the case a delegate returning one runs into.
+        using var result = module.Call("mtc_echo_sequence", new List<int> { 3, 1, 2 });
+
+        await Assert.That(result.ToString()).IsEqualTo("[3, 1, 2]");
+        await Assert.That(string.Join(",", result.As<int[]>())).IsEqualTo("3,1,2");
+    }
+
+    [Test]
+    public async Task TypedDictionary_KeepsItsKeyType()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        interp.Execute("""
+            def mtc_key_types(mapping):
+                return sorted(type(k).__name__ for k in mapping)
+            """);
+
+        using var module = interp.ImportModule("__main__");
+
+        // Keys convert by the same rules as values, so integer keys stay integers rather
+        // than being stringified into something that no longer matches.
+        using var result = module.Call(
+            "mtc_key_types",
+            new Dictionary<int, string> { [1] = "one", [2] = "two" });
+
+        await Assert.That(result.ToString()).IsEqualTo("['int', 'int']");
+    }
+
+    [Test]
+    public async Task TypedList_ConvertsBackToAListParameter()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        interp.Execute("""
+            def mtc_make_list():
+                return ['a', 'bb', 'ccc']
+            """);
+
+        using var module = interp.ImportModule("__main__");
+        using var result = module.Call("mtc_make_list");
+
+        var lengths = result.As<List<string>>();
+
+        await Assert.That(lengths.Count).IsEqualTo(3);
+        await Assert.That(string.Join(",", lengths)).IsEqualTo("a,bb,ccc");
+    }
 }

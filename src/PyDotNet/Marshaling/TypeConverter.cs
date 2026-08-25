@@ -53,10 +53,23 @@ internal static class TypeConverter
             TimeSpan ts => TimeSpanToPython(ts),
             Complex c => NativeMethods.PyComplex_FromDoubles(c.Real, c.Imaginary),
             PyObject py => BorrowedToPython(py),
+
+            // Before the collection cases: a delegate is not a sequence, but MulticastDelegate
+            // would otherwise fall through to the failure below.
+            Delegate del => DelegateBridge.Create(del),
             ITuple tpl => TupleToPython(tpl),
             Array arr => ArrayToPython(arr),
             IEnumerable<object?> list => ListToPython(list),
             IDictionary<string, object?> dict => ToDict(dict),
+
+            // Strongly typed collections — List<int>, Dictionary<string, double>, a LINQ
+            // result — which satisfy only the non-generic interfaces here because their
+            // element type is not object. Untyped last, so every case above still wins.
+            // A delegate returning one of these is ordinary .NET; before callbacks existed
+            // the conversion was only ever asked for on values the caller had already
+            // shaped, so the gap did not show.
+            System.Collections.IDictionary map => ToDict(map),
+            System.Collections.IEnumerable sequence => ListToPython(sequence),
             _ => throw new PyInteropException($"Cannot convert .NET type '{value.GetType().FullName}' to Python."),
         };
 
@@ -336,6 +349,15 @@ internal static class TypeConverter
             return PythonToArray(pyObj, elementType);
         }
 
+        // A Python sequence into List<T> and the interfaces it satisfies. Arrays alone
+        // were enough while conversions were only requested for declared return types;
+        // a delegate exposed as a callable is handed whatever Python passes, and a list
+        // parameter is the ordinary way to write that.
+        if (TryGetListElementType(targetType, out var listElementType))
+        {
+            return PythonToList(pyObj, listElementType);
+        }
+
         throw new PyInteropException(
             $"Unsupported target type '{targetType.FullName}' for Python → .NET conversion.");
     }
@@ -451,6 +473,81 @@ internal static class TypeConverter
         return list;
     }
 
+    /// <summary>
+    /// Builds a Python dict from a dictionary whose key and value types are not
+    /// <c>object</c>. Keys are converted with the same rules as values, so a
+    /// <c>Dictionary&lt;int, string&gt;</c> keeps integer keys rather than being
+    /// stringified.
+    /// </summary>
+    private static IntPtr ToDict(System.Collections.IDictionary source)
+    {
+        var dict = PyApi.NewReference(NativeMethods.PyDict_New(), "PyDict_New");
+        try
+        {
+            var entries = source.GetEnumerator();
+            while (entries.MoveNext())
+            {
+                var pyKey = PyApi.NewReference(ToPython(entries.Key), "dictionary key conversion");
+                try
+                {
+                    var pyValue = PyApi.NewReference(
+                        ToPython(entries.Value), "dictionary value conversion");
+                    try
+                    {
+                        PyApi.Status(
+                            NativeMethods.PyDict_SetItem(dict, pyKey, pyValue), "PyDict_SetItem");
+                    }
+                    finally
+                    {
+                        NativeMethods.Py_DecRef(pyValue);
+                    }
+                }
+                finally
+                {
+                    NativeMethods.Py_DecRef(pyKey);
+                }
+            }
+
+            return dict;
+        }
+        catch
+        {
+            NativeMethods.Py_DecRef(dict);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Builds a Python list from a sequence whose element type is not <c>object</c>. The
+    /// length is not known up front, so items are appended rather than pre-sized.
+    /// </summary>
+    private static IntPtr ListToPython(System.Collections.IEnumerable source)
+    {
+        var list = PyApi.NewReference(NativeMethods.PyList_New(0), "PyList_New");
+        try
+        {
+            foreach (var item in source)
+            {
+                var pyItem = PyApi.NewReference(ToPython(item), "list item conversion");
+                try
+                {
+                    PyApi.Status(NativeMethods.PyList_Append(list, pyItem), "PyList_Append");
+                }
+                finally
+                {
+                    NativeMethods.Py_DecRef(pyItem);
+                }
+            }
+
+            return list;
+        }
+        catch
+        {
+            NativeMethods.Py_DecRef(list);
+            throw;
+        }
+    }
+
     private static IntPtr ListToPython(IEnumerable<object?> source)
     {
         // Avoid the ToList() allocation when the source is already an indexed collection.
@@ -521,6 +618,62 @@ internal static class TypeConverter
         var result = new byte[(int)len];
         Marshal.Copy(buf, result, 0, (int)len);
         return result;
+    }
+
+    /// <summary>
+    /// Recognizes <c>List&lt;T&gt;</c> and the read-only or mutable list interfaces it
+    /// implements, all of which a <c>List&lt;T&gt;</c> can satisfy.
+    /// </summary>
+    private static bool TryGetListElementType(Type targetType, out Type elementType)
+    {
+        elementType = typeof(object);
+
+        if (!targetType.IsGenericType)
+        {
+            return false;
+        }
+
+        var definition = targetType.GetGenericTypeDefinition();
+        if (definition != typeof(List<>)
+            && definition != typeof(IList<>)
+            && definition != typeof(ICollection<>)
+            && definition != typeof(IEnumerable<>)
+            && definition != typeof(IReadOnlyList<>)
+            && definition != typeof(IReadOnlyCollection<>))
+        {
+            return false;
+        }
+
+        elementType = targetType.GetGenericArguments()[0];
+        return true;
+    }
+
+    private static object PythonToList(IntPtr pyObj, Type elementType)
+    {
+        var list = (System.Collections.IList)Activator.CreateInstance(
+            typeof(List<>).MakeGenericType(elementType))!;
+
+        var len = NativeMethods.PySequence_Length(pyObj);
+        if (len < 0)
+        {
+            NativeMethods.PyErr_Clear();
+            return list;
+        }
+
+        for (nint i = 0; i < len; i++)
+        {
+            var item = NativeMethods.PySequence_GetItem(pyObj, i); // new ref
+            try
+            {
+                _ = list.Add(FromPython(item, elementType));
+            }
+            finally
+            {
+                NativeMethods.Py_DecRef(item);
+            }
+        }
+
+        return list;
     }
 
     private static Array PythonToArray(IntPtr pyObj, Type elementType)
