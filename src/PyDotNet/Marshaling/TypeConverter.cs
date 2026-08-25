@@ -39,7 +39,11 @@ internal static class TypeConverter
             sbyte sb => NativeMethods.PyLong_FromLongLong(sb),
             float f => NativeMethods.PyFloat_FromDouble(f),
             double d => NativeMethods.PyFloat_FromDouble(d),
-            decimal dec => NativeMethods.PyFloat_FromDouble((double)dec),
+            decimal dec => DecimalToPython(dec),
+            BigInteger big => BigIntegerToPython(big),
+            Guid guid => GuidToPython(guid),
+            DateOnly date => DateOnlyToPython(date),
+            TimeOnly time => TimeOnlyToPython(time),
             string str => NativeMethods.PyUnicode_FromString(str),
             char c => NativeMethods.PyUnicode_FromOrdinal(c),
             byte[] bytes => BytesToPython(bytes),
@@ -266,6 +270,36 @@ internal static class TypeConverter
             return new Complex(
                 NativeMethods.PyComplex_RealAsDouble(pyObj),
                 NativeMethods.PyComplex_ImagAsDouble(pyObj));
+        }
+
+        // decimal, BigInteger and Guid all come back through their string forms, which is
+        // what keeps them lossless: str(Decimal) and str(int) are exact, and a double or an
+        // Int64 hop would not be.
+        if (targetType == typeof(decimal))
+        {
+            return decimal.Parse(PythonToString(pyObj), NumberStyles.Float, CultureInfo.InvariantCulture);
+        }
+
+        if (targetType == typeof(BigInteger))
+        {
+            return BigInteger.Parse(PythonToString(pyObj), NumberStyles.Integer, CultureInfo.InvariantCulture);
+        }
+
+        if (targetType == typeof(Guid))
+        {
+            return Guid.Parse(PythonToString(pyObj), CultureInfo.InvariantCulture);
+        }
+
+        // Read through PythonToDate rather than PythonToDateTime: a datetime.date has no
+        // hour attribute, so the datetime reader would fail on exactly the type this is for.
+        if (targetType == typeof(DateOnly))
+        {
+            return DateOnly.FromDateTime(PythonToDate(pyObj));
+        }
+
+        if (targetType == typeof(TimeOnly))
+        {
+            return PythonToTimeOnly(pyObj);
         }
 
         if (targetType == typeof(PyObject) || targetType.IsAssignableTo(typeof(PyObject)))
@@ -644,6 +678,24 @@ internal static class TypeConverter
         return new DateTime(year, month, day);
     }
 
+    /// <summary>
+    /// Reads a <c>datetime.time</c>.
+    /// <para>
+    /// Distinct from <see cref="PythonToTimeSpan"/>, which reads a <c>timedelta</c> — that
+    /// carries <c>days</c>/<c>seconds</c>/<c>microseconds</c>, a duration, where this is a
+    /// time of day.
+    /// </para>
+    /// </summary>
+    private static TimeOnly PythonToTimeOnly(IntPtr pyObj)
+    {
+        var hour = GetIntAttr(pyObj, "hour");
+        var minute = GetIntAttr(pyObj, "minute");
+        var second = GetIntAttr(pyObj, "second");
+        var microsecond = GetIntAttr(pyObj, "microsecond");
+
+        return new TimeOnly(hour, minute, second, microsecond / 1000, microsecond % 1000);
+    }
+
     private static TimeSpan PythonToTimeSpan(IntPtr pyObj)
     {
         var days = GetIntAttr(pyObj, "days");
@@ -651,6 +703,122 @@ internal static class TypeConverter
         var microseconds = GetIntAttr(pyObj, "microseconds");
         return new TimeSpan(days, 0, 0, seconds, 0, microseconds);
     }
+
+    /// <summary>
+    /// Calls <c>module.typeName(*args)</c> and returns the new reference.
+    /// <para>
+    /// The types below all construct the same way — import a module, fetch a type, call it
+    /// with a tuple — and doing that by hand costs about thirty lines each with three
+    /// separate reference-counting paths to get right.
+    /// </para>
+    /// </summary>
+    private static IntPtr ConstructFrom(string module, string typeName, params IntPtr[] args)
+    {
+        var pyModule = NativeMethods.PyImport_ImportModule(module);
+        if (pyModule == IntPtr.Zero)
+        {
+            PythonException.ThrowIfPythonErrorOccurred();
+            throw new PyInteropException($"Failed to import '{module}' module.");
+        }
+
+        IntPtr pyType;
+        try
+        {
+            pyType = NativeMethods.PyObject_GetAttrString(pyModule, typeName);
+        }
+        finally
+        {
+            NativeMethods.Py_DecRef(pyModule);
+        }
+
+        if (pyType == IntPtr.Zero)
+        {
+            PythonException.ThrowIfPythonErrorOccurred();
+            throw new PyInteropException($"'{module}' has no attribute '{typeName}'.");
+        }
+
+        try
+        {
+            // PyTuple_SetItem steals a reference, so the caller's arguments are owned by
+            // the tuple from here and must not be released separately.
+            var tuple = NativeMethods.PyTuple_New(args.Length);
+            for (var i = 0; i < args.Length; i++)
+            {
+                _ = NativeMethods.PyTuple_SetItem(tuple, i, args[i]);
+            }
+
+            try
+            {
+                var result = NativeMethods.PyObject_CallObject(pyType, tuple);
+                if (result == IntPtr.Zero)
+                {
+                    PythonException.ThrowIfPythonErrorOccurred();
+                }
+
+                return result;
+            }
+            finally
+            {
+                NativeMethods.Py_DecRef(tuple);
+            }
+        }
+        finally
+        {
+            NativeMethods.Py_DecRef(pyType);
+        }
+    }
+
+    /// <summary>
+    /// Converts to <c>decimal.Decimal</c> via the invariant string form.
+    /// <para>
+    /// Not via <c>double</c>. Going through a binary float loses precision for the one .NET
+    /// type people choose specifically because it does not — <c>0.1m</c> and
+    /// <c>79228162514264337593543950335m</c> both come back changed. The string round-trip
+    /// is exact in both directions.
+    /// </para>
+    /// </summary>
+    private static IntPtr DecimalToPython(decimal value) =>
+        ConstructFrom(
+            "decimal",
+            "Decimal",
+            NativeMethods.PyUnicode_FromString(value.ToString(CultureInfo.InvariantCulture)));
+
+    /// <summary>
+    /// Converts to a Python <c>int</c>, which is arbitrary-precision and so the natural
+    /// partner for <see cref="BigInteger"/>.
+    /// <para>
+    /// Built from the decimal string rather than an integer overload, since the value is by
+    /// definition not required to fit in 64 bits.
+    /// </para>
+    /// </summary>
+    private static IntPtr BigIntegerToPython(BigInteger value) =>
+        ConstructFrom(
+            "builtins",
+            "int",
+            NativeMethods.PyUnicode_FromString(value.ToString(CultureInfo.InvariantCulture)));
+
+    /// <summary>Converts to <c>uuid.UUID</c>.</summary>
+    private static IntPtr GuidToPython(Guid value) =>
+        ConstructFrom("uuid", "UUID", NativeMethods.PyUnicode_FromString(value.ToString("D", CultureInfo.InvariantCulture)));
+
+    /// <summary>Converts to <c>datetime.date</c>, completing the family beside DateTime.</summary>
+    private static IntPtr DateOnlyToPython(DateOnly value) =>
+        ConstructFrom(
+            "datetime",
+            "date",
+            NativeMethods.PyLong_FromLong(value.Year),
+            NativeMethods.PyLong_FromLong(value.Month),
+            NativeMethods.PyLong_FromLong(value.Day));
+
+    /// <summary>Converts to <c>datetime.time</c>, preserving microsecond resolution.</summary>
+    private static IntPtr TimeOnlyToPython(TimeOnly value) =>
+        ConstructFrom(
+            "datetime",
+            "time",
+            NativeMethods.PyLong_FromLong(value.Hour),
+            NativeMethods.PyLong_FromLong(value.Minute),
+            NativeMethods.PyLong_FromLong(value.Second),
+            NativeMethods.PyLong_FromLong(value.Millisecond * 1000 + value.Microsecond));
 
     private static IntPtr DateTimeToPython(DateTime dt)
     {
