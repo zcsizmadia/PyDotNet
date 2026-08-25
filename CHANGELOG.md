@@ -7,7 +7,7 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Sinc
 that is checked rather than asserted: every packable project is validated against the
 previously published version, and the build fails on an unintended breaking API change.
 
-## [Unreleased]
+## [1.2.0] — 2026-08-25
 
 ### Added
 
@@ -215,7 +215,8 @@ previously published version, and the build fails on an unintended breaking API 
 
 - First release.
 
-[Unreleased]: https://github.com/zcsizmadia/PyDotNet/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/zcsizmadia/PyDotNet/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/zcsizmadia/PyDotNet/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/zcsizmadia/PyDotNet/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/zcsizmadia/PyDotNet/compare/v0.9.0...v1.0.0
 [0.9.0]: https://github.com/zcsizmadia/PyDotNet/releases/tag/v0.9.0

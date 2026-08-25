@@ -10,7 +10,8 @@
             "PyDotNet.NumPy/PyDotNet.NumPy.csproj",
             "PyDotNet.DataFrames/PyDotNet.DataFrames.csproj",
             "PyDotNet.Torch/PyDotNet.Torch.csproj",
-            "PyDotNet.Matplotlib/PyDotNet.Matplotlib.csproj"
+            "PyDotNet.Matplotlib/PyDotNet.Matplotlib.csproj",
+            "PyDotNet.Extensions.Hosting/PyDotNet.Extensions.Hosting.csproj"
           ]
         }
       ],
