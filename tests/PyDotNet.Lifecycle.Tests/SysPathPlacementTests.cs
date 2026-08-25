@@ -1,8 +1,7 @@
-using PyDotNet.Exceptions;
-using PyDotNet.Native;
-using PyDotNet.Runtime;
+using System.Runtime.CompilerServices;
 
-using TUnit.Core.Exceptions;
+using PyDotNet.Exceptions;
+using PyDotNet.Runtime;
 
 namespace PyDotNet.Lifecycle.Tests;
 
@@ -38,6 +37,34 @@ public sealed class SysPathPlacementTests
     /// </summary>
     private const string ShadowedModule = "colorsys";
 
+    /// <summary>
+    /// Asserts the shadowed module has not already been imported.
+    /// <para>
+    /// Both tests decide precedence with <c>importlib.util.find_spec</c>, which returns
+    /// <c>sys.modules[name].__spec__</c> for an already-imported module and never consults
+    /// <c>sys.path</c> at all. If some future CPython release or PyDotNet warm-up import
+    /// pulled <c>colorsys</c> in transitively, the Append test would pass while proving
+    /// nothing and the Prepend test would fail with no hint as to why.
+    /// </para>
+    /// <para>
+    /// This file already records one instance of exactly that coupling: the first attempt
+    /// shadowed <c>types</c>, which asyncio imports during warm-up. Checking is cheap and
+    /// turns a silent change in assumptions into a named failure.
+    /// </para>
+    /// </summary>
+    private static async Task AssertNotAlreadyImportedAsync(PyInterpreter interpreter)
+    {
+        interpreter.Execute("import sys");
+
+        using var loaded = interpreter.Evaluate($"{Quote(ShadowedModule)} in sys.modules");
+
+        await Assert.That(loaded.As<bool>())
+            .IsFalse()
+            .Because(
+                $"'{ShadowedModule}' was imported during startup, so find_spec would answer " +
+                "from sys.modules instead of sys.path and neither placement test would mean anything");
+    }
+
     [Test]
     public async Task Prepend_TakesPrecedenceOverTheStandardLibrary()
     {
@@ -51,6 +78,7 @@ public sealed class SysPathPlacementTests
 
         using var interpreter = PyRuntime.CreateInterpreter();
         interpreter.Execute("import sys, importlib.util");
+        await AssertNotAlreadyImportedAsync(interpreter);
 
         // The directory is ahead of everything the interpreter supplies.
         using var index = interpreter.Evaluate($"sys.path.index({Quote(directory)})");
@@ -77,6 +105,7 @@ public sealed class SysPathPlacementTests
 
         using var interpreter = PyRuntime.CreateInterpreter();
         interpreter.Execute("import sys, importlib.util");
+        await AssertNotAlreadyImportedAsync(interpreter);
 
         using var index = interpreter.Evaluate($"sys.path.index({Quote(directory)})");
         await Assert.That(index.As<int>()).IsGreaterThan(0);
@@ -181,20 +210,16 @@ public sealed class SysPathPlacementTests
     /// <summary>
     /// Creates a directory containing a module that shadows one from the standard library,
     /// and returns its full path.
+    /// <para>
+    /// Also claims the process. These tests each arrange <c>sys.path</c> differently and the
+    /// interpreter can only be arranged once, so the second one to run in a shared process
+    /// is skipped with an explanation rather than left to fail confusingly.
+    /// </para>
     /// </summary>
-    private static string RequirePlacementRun()
+    private string RequirePlacementRun([CallerMemberName] string caller = "")
     {
-        var mode = Environment.GetEnvironmentVariable(PlacementVariable);
-        if (string.IsNullOrWhiteSpace(mode))
-        {
-            throw new SkipTestException(
-                $"{PlacementVariable} is not set; sys.path placement is not exercised in this process.");
-        }
-
-        if (!PythonLibraryLocator.IsAvailable)
-        {
-            throw new SkipTestException("Python shared library is unavailable.");
-        }
+        GatedTest.RequireEnabled(PlacementVariable);
+        GatedTest.ClaimProcess($"{nameof(SysPathPlacementTests)}.{caller}");
 
         var directory = Path.Combine(Path.GetTempPath(), $"pydotnet-syspath-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
@@ -202,9 +227,64 @@ public sealed class SysPathPlacementTests
             Path.Combine(directory, $"{ShadowedModule}.py"),
             "PYDOTNET_SHADOW = True\n");
 
+        // Tracked so the directory — which holds a file named after a standard library
+        // module — does not accumulate in the temp folder across runs.
+        _createdDirectories.Add(directory);
+
         return directory;
     }
 
-    /// <summary>Renders a path as a Python string literal, escaping Windows separators.</summary>
-    private static string Quote(string value) => $"'{value.Replace("\\", "\\\\", StringComparison.Ordinal)}'";
+    /// <summary>
+    /// Renders a path as a Python string literal.
+    /// <para>
+    /// Escapes the quote character as well as the backslash. Escaping only backslashes
+    /// worked until a path contained an apostrophe — a Windows account named
+    /// <c>C:\Users\O'Brien</c> is enough — and then produced a Python <c>SyntaxError</c>
+    /// that looks nothing like a placement failure.
+    /// </para>
+    /// </summary>
+    private static string Quote(string value)
+    {
+        var escaped = value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("'", "\\'", StringComparison.Ordinal);
+
+        return $"'{escaped}'";
+    }
+
+    /// <summary>
+    /// Removes the shadowing directories created by this fixture.
+    /// <para>
+    /// The interpreter is not shut down here: <c>sys.path</c> still refers to these
+    /// directories, but the process is ending and each fixture owns its process, so
+    /// deleting the files is both safe and the only cleanup that outlives it.
+    /// </para>
+    /// </summary>
+    [After(Test)]
+    public void Cleanup()
+    {
+        PyRuntime.Shutdown();
+
+        foreach (var directory in _createdDirectories)
+        {
+            try
+            {
+                if (Directory.Exists(directory))
+                {
+                    Directory.Delete(directory, recursive: true);
+                }
+            }
+            catch (IOException)
+            {
+                // A leftover temp directory is not worth failing a passing test over.
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+
+        _createdDirectories.Clear();
+    }
+
+    private readonly List<string> _createdDirectories = [];
 }

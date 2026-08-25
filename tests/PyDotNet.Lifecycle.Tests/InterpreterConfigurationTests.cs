@@ -283,6 +283,9 @@ public sealed class VirtualEnvironmentActivation
 
     private static string RequireVirtualEnvironment()
     {
+        // This gate carries a path rather than a flag, so it keeps its own presence check
+        // instead of using GatedTest.RequireEnabled — but it shares the process claim and
+        // the Python availability check.
         var venv = Environment.GetEnvironmentVariable(VenvVariable);
         if (string.IsNullOrWhiteSpace(venv))
         {
@@ -294,6 +297,9 @@ public sealed class VirtualEnvironmentActivation
         {
             throw new SkipTestException($"{VenvVariable} does not point at a virtual environment.");
         }
+
+        GatedTest.RequirePython();
+        GatedTest.ClaimProcess(nameof(VirtualEnvironmentActivation));
 
         return venv;
     }
@@ -378,16 +384,7 @@ public sealed class IsolationActivation
 
     private static void RequireIsolationRun()
     {
-        if (!string.Equals(
-                Environment.GetEnvironmentVariable(IsolationVariable), "1", StringComparison.Ordinal))
-        {
-            throw new SkipTestException(
-                $"{IsolationVariable} is not set; isolation is not exercised in this process.");
-        }
-
-        if (!PythonLibraryLocator.IsAvailable)
-        {
-            throw new SkipTestException("Python shared library is unavailable.");
-        }
+        GatedTest.RequireEnabled(IsolationVariable);
+        GatedTest.ClaimProcess(nameof(IsolationActivation));
     }
 }
