@@ -65,10 +65,85 @@ jobs:
           dotnet restore
           dotnet build -c Release --no-restore
 
+      # Coverage is collected on one leg only. It is the same test run either way, so
+      # measuring everywhere would multiply the cost by sixteen for identical numbers.
       - name: Test
         shell: bash
         run: |
-          dotnet test -c Release --no-build
+          if [ "${{ matrix.pack-nupkg }}" = "true" ]; then
+            dotnet test -c Release --no-build -- --coverage --coverage-output-format cobertura
+          else
+            dotnet test -c Release --no-build
+          fi
+
+      - name: Summarise coverage
+        if: matrix.pack-nupkg == true
+        shell: bash
+        run: |
+          # One report per test assembly per target framework, so there are more than twenty.
+          # They are summed rather than sampled: taking any single report's line-rate reports
+          # one assembly's view as if it were the whole project, which is off by a factor of
+          # two or three and looks authoritative while being wrong.
+          #
+          # lines-covered and lines-valid sit on each report's root element, so the aggregate
+          # needs no report-generator dependency.
+          REPORTS=$(find TestResults -name '*.cobertura.xml' | wc -l)
+
+          if [ "$REPORTS" -eq 0 ]; then
+            echo "::error::Coverage was requested but no cobertura report was produced."
+            exit 1
+          fi
+
+          read -r COVERED VALID < <(
+            find TestResults -name '*.cobertura.xml' -exec \
+              sed -n 's/.*lines-covered="\([0-9]*\)".*lines-valid="\([0-9]*\)".*/\1 \2/p' {} \; \
+            | awk '{ c += $1; v += $2 } END { print c, v }'
+          )
+
+          if [ -z "$VALID" ] || [ "$VALID" -eq 0 ]; then
+            echo "::error::Coverage reports contained no measurable lines."
+            exit 1
+          fi
+
+          PERCENT=$(awk "BEGIN { printf \"%.1f\", $COVERED / $VALID * 100 }")
+
+          echo "Line coverage: ${PERCENT}% ($COVERED/$VALID lines across $REPORTS reports)"
+          {
+            echo "### Coverage"
+            echo ""
+            echo "Line coverage **${PERCENT}%** — $COVERED of $VALID lines, aggregated over $REPORTS reports."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage report
+        if: matrix.pack-nupkg == true
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage
+          path: TestResults/*.cobertura.xml
+
+      # The benchmarks back the latency table in the README and are built by CI as part of
+      # the solution, but nothing ever ran them — so a benchmark that compiles and then
+      # throws would go unnoticed until someone tried to reproduce the numbers.
+      #
+      # --list flat covers discovery across every benchmark, including the pythonnet
+      # comparisons; the dry run then executes PyDotNet's own once each. Filtering keeps
+      # pythonnet's separate interpreter configuration out of the build's critical path.
+      - name: Smoke-run benchmarks
+        if: matrix.pack-nupkg == true
+        shell: bash
+        run: |
+          LISTED=$(dotnet run --project benchmarks/PyDotNet.Benchmarks -c Release --no-build -- --list flat \
+                   | grep -c 'PyDotNet.Benchmarks.Benchmarks' || true)
+
+          if [ "$LISTED" -eq 0 ]; then
+            echo "::error::No benchmarks were discovered."
+            exit 1
+          fi
+
+          echo "Discovered $LISTED benchmarks."
+
+          dotnet run --project benchmarks/PyDotNet.Benchmarks -c Release --no-build -- \
+            --job Dry --filter '*PyDotNetBenchmarks*'
 
       # CPython reads the program name only during Py_Initialize(), so a virtual
       # environment can be activated at most once per process. This runs the activation
@@ -342,3 +417,76 @@ jobs:
         shell: bash
         run: |
           dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build
+
+  # Windows on ARM64, which the requirements table claims but nothing tested.
+  #
+  # Informational rather than part of the matrix, for the same reason as Intel macOS:
+  # pyarrow and torch publish no win_arm64 wheels, so the plugin test projects cannot run
+  # and a single pip install of the full set would fail the job outright. numpy, pandas and
+  # matplotlib do have wheels, so that gap may close on its own.
+  #
+  # The lifecycle suite needs only the standard library, and it covers what actually differs
+  # between platforms: locating libpython, loading it, and configuring the interpreter.
+  windows-arm:
+    runs-on: windows-11-arm
+    name: Build - Windows arm64 (informational)
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install .NET SDKs
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          update-environment: true
+
+      - name: Report interpreter and wheel availability
+        shell: bash
+        run: |
+          python -VV
+          python -c "import platform; print('machine:', platform.machine())"
+          python -m pip install --upgrade pip
+
+          for pkg in numpy pandas matplotlib pyarrow torch; do
+            if timeout 90 python -m pip install --only-binary=:all: --dry-run --quiet "$pkg" 2>/dev/null; then
+              echo "  available  $pkg"
+            else
+              echo "  missing    $pkg (no win_arm64 wheel yet)"
+            fi
+          done
+
+      - name: Build
+        shell: bash
+        run: |
+          dotnet restore
+          dotnet build -c Release --no-restore
+
+      - name: Test interpreter lifecycle
+        shell: bash
+        run: |
+          dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build
+
+      - name: Test virtual environment activation
+        shell: bash
+        run: |
+          VENV="${RUNNER_TEMP}/pydotnet-test-venv"
+          python -m venv "$VENV"
+          SITE_PACKAGES=$("$VENV/Scripts/python.exe" -c "import sysconfig; print(sysconfig.get_paths()['purelib'])")
+          echo "MARKER = 'pydotnet'" > "$SITE_PACKAGES/pydotnet_venv_marker.py"
+
+          if python -c "import pydotnet_venv_marker" 2>/dev/null; then
+            echo "::error::Marker module leaked into the base interpreter; the test would prove nothing."
+            exit 1
+          fi
+
+          PYDOTNET_TEST_VENV="$VENV" dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build \
+            -- --treenode-filter "/*/*/VirtualEnvironmentActivation/*"
