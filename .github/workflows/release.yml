@@ -15,9 +15,11 @@ jobs:
     # This ensures the job only runs if the tag was created from the main branch
     if: github.event.release.target_commitish == 'main'
     permissions:
-      actions: read     # To download from build.yml
-      contents: write   # To upload assets to the Release
-      packages: write   # To push to GitHub Packages
+      actions: read        # To download from build.yml
+      contents: write      # To upload assets to the Release
+      packages: write      # To push to GitHub Packages
+      id-token: write      # To sign the build provenance attestation
+      attestations: write  # To record it against the repository
 
     steps:
       # Check out the tagged commit itself, not the branch tip, so the SHA resolved below
@@ -93,6 +95,18 @@ jobs:
           # Export variables for later steps
           echo "TARGET_NUPKGS=$TARGET_NUPKGS" >> $GITHUB_ENV
           echo "TAG_VERSION=$TAG_VERSION" >> $GITHUB_ENV
+
+      # Records where these exact files came from — which workflow, which commit, which
+      # run — and signs it. Anyone can then verify a downloaded package was built here and
+      # not substituted, with `gh attestation verify <file> --repo zcsizmadia/PyDotNet`.
+      #
+      # Runs before publishing so nothing reaches NuGet without provenance. It covers the
+      # artifact that was verified against the tag in the step above, so the attested files
+      # are the ones actually pushed.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: 'nupkgs/*.nupkg'
 
       - name: Attach Assets to GitHub Release
         env:
