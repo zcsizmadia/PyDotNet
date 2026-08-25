@@ -54,6 +54,8 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 - [Configuration](#configuration)
   - [Virtual environments](#virtual-environments)
   - [Isolation](#isolation)
+  - [sys.path precedence](#syspath-precedence)
+  - [Inspecting what was resolved](#inspecting-what-was-resolved)
 - [Exception handling](#exception-handling)
 - [Thread safety and the GIL](#thread-safety-and-the-gil)
 - [Local development](#local-development)
@@ -1187,6 +1189,40 @@ PyRuntime.Initialize(new PyRuntimeOptions
 
 Finer-grained control is available via `UseEnvironment` (ignore `PYTHON*` variables, `-E`) and `UserSiteDirectory` (skip the per-user `site-packages` directory, `-s`).
 
+### sys.path precedence
+
+`AdditionalSysPaths` entries are **appended** by default, so they extend the search path but cannot shadow a module that is already importable. Set `SysPathPlacement` when they need to win:
+
+```csharp
+PyRuntime.Initialize(new PyRuntimeOptions
+{
+    AdditionalSysPaths = ["/opt/myapp/overrides"],
+    SysPathPlacement   = PySysPathPlacement.Prepend,
+});
+```
+
+Use this to override a shipped package — a patched build, a local development copy — without touching the environment. Shadowing a *standard library* module this way will break the interpreter in ways that are hard to trace, so when the goal is simply a different set of packages, `VirtualEnvironmentPath` is the better tool.
+
+The placement applies only to your entries. The `site-packages` directories PyDotNet discovers for itself on Linux and macOS are always appended, so they can never shadow what you asked for.
+
+### Inspecting what was resolved
+
+Interpreter discovery has several fallbacks, so the interpreter a process ends up hosting is not always the one its author assumed. `EffectiveConfiguration` records what was actually chosen — the first thing worth checking when imports resolve from somewhere unexpected:
+
+```csharp
+PyRuntime.Initialize(options);
+
+Console.WriteLine(PyRuntime.EffectiveConfiguration);
+// Python 3.14.4 [GIL] via PyInitConfig; library '/usr/lib/libpython3.14.so';
+// program name /srv/app/.venv/bin/python; prepended 1 sys.path entry [/opt/myapp/overrides]
+```
+
+It exposes the loaded library, the Python version (including the release level, so a release candidate reports `3.15.0rc1`), the program name and home actually applied, the `sys.path` entries and their placement, whether the GIL is enabled, and whether initialization went through `PyInitConfig` or the legacy globals.
+
+`VirtualEnvironmentWarning` is set when the configured virtual environment appears to have been created by a different Python installation than the library that was loaded — the usual cause of `ModuleNotFoundError: No module named 'encodings'`. The same finding is logged, but the default `ILogger` discards everything, so a host that never attached one would otherwise have no way to see it.
+
+> Returns `null` before the runtime is initialized.
+
 > These settings are read by CPython during initialization and apply once per process. See **[Virtual environments and isolation](docs/virtual-environments.md)** for the full reference, constraints, and troubleshooting.
 
 ### Environment variable
@@ -1506,8 +1542,11 @@ Independent of the items above, and each small enough to land on its own:
 | | |
 |---|---|
 | **Python 3.15 in the enforced matrix** | 3.15 is verified and runs as an informational job. Promoting it waits on third-party wheels — `pyarrow`, `matplotlib` and `torch` have none yet. Tracked in [#43](https://github.com/zcsizmadia/PyDotNet/issues/43) |
-| **NuGet package icon** | packages currently ship without one, so listings fall back to a placeholder |
-| **Changelog** | release notes are written per release; the history between them lives only in git |
-| **Effective-configuration introspection** | `PyRuntime` exposes `State` and `IsGilEnabled` but not which interpreter it resolved. A read-only view would make support questions answerable — and would surface the virtual environment mismatch warning, which the default `NullLogger` discards |
-| **`sys.path` precedence** | `AdditionalSysPaths` appends, so entries cannot shadow an installed package. Prepending is a behaviour change and wants its own release |
-| **Interpreter restart** | `Py_Finalize` is deliberately never called, so a process gets one interpreter configuration for its lifetime. Worth revisiting whether newer CPython makes a clean finalize viable |
+| **Interpreter restart** | `Py_Finalize` is deliberately never called, so a process gets one interpreter configuration for its lifetime. Investigated in [#61](https://github.com/zcsizmadia/PyDotNet/issues/61): finalizing is viable on current CPython, but a C extension cannot be re-imported afterwards (`cannot load module more than once per process`), so a general restart would fail on the first real workload |
+| **Delegates as Python callables** | .NET callbacks cannot currently be passed into Python. Tracked in [#66](https://github.com/zcsizmadia/PyDotNet/issues/66) |
+| **Richer exceptions and marshaling coverage** | cause chaining and typed exception subtypes ([#67](https://github.com/zcsizmadia/PyDotNet/issues/67)); `decimal` precision, `Guid`, `DateOnly`/`TimeOnly`, `BigInteger` ([#65](https://github.com/zcsizmadia/PyDotNet/issues/65)) |
+
+Recently completed and no longer listed above: the NuGet package icon, the
+[changelog](CHANGELOG.md), effective-configuration introspection
+(`PyRuntime.EffectiveConfiguration`) and `sys.path` precedence
+(`PySysPathPlacement`).

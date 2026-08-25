@@ -12,6 +12,7 @@ This document covers the options that put the host application in control:
 - [Setting the program name directly](#setting-the-program-name-directly)
 - [Python home](#python-home)
 - [Isolation](#isolation)
+- [Checking what was actually resolved](#checking-what-was-actually-resolved)
 - [Constraints](#constraints)
 - [Troubleshooting](#troubleshooting)
 - [Python version support](#python-version-support)
@@ -158,6 +159,27 @@ PyRuntime.Initialize(new PyRuntimeOptions
 
 Verify the result from Python via `sys.flags.isolated`, `sys.flags.no_user_site`, and
 `sys.flags.ignore_environment`.
+
+## Checking what was actually resolved
+
+Everything above changes which interpreter runs and what it can see, so when the result is
+not what you expected, start by asking the runtime what it chose:
+
+```csharp
+Console.WriteLine(PyRuntime.EffectiveConfiguration);
+// Python 3.14.4 [GIL] via PyInitConfig; library '/usr/lib/libpython3.14.so';
+// program name /srv/myapp/.venv/bin/python
+```
+
+`PyEffectiveConfiguration` records the loaded library, the Python version, the program name
+and home actually applied, the `sys.path` entries added and where they were placed, whether
+the GIL is enabled, and which initialization API ran. It returns `null` before the runtime
+is initialized.
+
+`VirtualEnvironmentWarning` is set when the environment's `pyvenv.cfg` names a different
+base installation than the library that was loaded — the mismatch described under
+[Troubleshooting](#troubleshooting). Reading it there is more reliable than relying on the
+log, since the default `ILogger` discards everything.
 
 ## Constraints
 

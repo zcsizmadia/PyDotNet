@@ -25,6 +25,20 @@ previously published version, and the build fails on an unintended breaking API 
   debugging — which matters most at the native interop boundary, where a managed stack
   trace rarely explains anything on its own. ([#49](https://github.com/zcsizmadia/PyDotNet/pull/49))
 
+- **`PyRuntime.EffectiveConfiguration`** reports what interpreter was actually resolved —
+  library, version, program name, `sys.path` entries and placement, GIL state, and which
+  initialization API ran. Interpreter discovery has several fallbacks, so the interpreter a
+  process hosts is not always the one its author assumed. It also carries the virtual
+  environment mismatch warning, which the default `ILogger` otherwise discards.
+  ([#58](https://github.com/zcsizmadia/PyDotNet/pull/58),
+  [#77](https://github.com/zcsizmadia/PyDotNet/pull/77))
+- **`SysPathPlacement`** lets `AdditionalSysPaths` entries take precedence over an installed
+  package instead of only extending the search path. Defaults to `Append`, so existing
+  callers keep the ordering they had.
+  ([#60](https://github.com/zcsizmadia/PyDotNet/pull/60))
+- A project mark, and with it the NuGet package icon the packages previously lacked.
+  ([#59](https://github.com/zcsizmadia/PyDotNet/pull/59))
+
 ### Changed
 
 - `InterpreterPoolSize` now states that it has no effect and logs a warning when set above
@@ -41,6 +55,14 @@ previously published version, and the build fails on an unintended breaking API 
   so publishing while the tagged commit was still building would have shipped earlier
   binaries under the new tag, with nothing to catch it.
   ([#51](https://github.com/zcsizmadia/PyDotNet/pull/51))
+- **`sys.path` entries are no longer duplicated across Initialize/Shutdown cycles.**
+  `Shutdown` leaves CPython initialized, so re-initializing re-applied the same paths; after
+  N cycles the list held N copies and every failed import walked all of them.
+  ([#72](https://github.com/zcsizmadia/PyDotNet/issues/72))
+- **A repeat `Initialize` with different `sys.path` options is rejected rather than silently
+  ignored.** The options were absent from the configuration signature, so the call returned
+  successfully having changed nothing — and with `Prepend` that discard decides which module
+  gets imported. ([#71](https://github.com/zcsizmadia/PyDotNet/issues/71))
 
 ### Documentation
 
@@ -56,6 +78,14 @@ previously published version, and the build fails on an unintended breaking API 
   .NET observes the cancellation. Both were intermittent failures.
   ([#50](https://github.com/zcsizmadia/PyDotNet/pull/50),
   [#54](https://github.com/zcsizmadia/PyDotNet/pull/54))
+- The gated CI steps discover their test list instead of naming methods, so a test added to
+  one of those classes can no longer run nowhere while CI stays green.
+  ([#75](https://github.com/zcsizmadia/PyDotNet/issues/75))
+- The `sys.path` fixture cleans up its temporary directories, claims its process so a local
+  unfiltered run explains itself rather than failing confusingly, and shares one gate helper
+  with its siblings — the four hand-written copies had drifted far enough that
+  `PYDOTNET_TEST_SYSPATH=0` enabled the tests it looks like it disables.
+  ([#74](https://github.com/zcsizmadia/PyDotNet/issues/74))
 
 ## [1.1.0] — 2026-08-23
 
