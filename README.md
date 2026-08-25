@@ -7,7 +7,7 @@ A modern, high-performance, async-aware, zero-copy Python ↔ .NET interop runti
 PyDotNet embeds CPython directly inside your .NET process. No subprocess, no sockets, no serialisation — just raw function calls across the language boundary with full GIL awareness and optional zero-copy memory sharing.
 
 > **Plugin packages** — typed, idiomatic C# wrappers for popular Python libraries ship as separate NuGet packages built on top of PyDotNet core:
-> [`PyDotNet.NumPy`](docs/numpy.md) · [`PyDotNet.DataFrames`](docs/dataframes.md) · [`PyDotNet.Torch`](docs/torch.md) · [`PyDotNet.Matplotlib`](docs/matplotlib.md) · `PyDotNet.LangChain` _(planned)_
+> [`PyDotNet.NumPy`](docs/numpy.md) · [`PyDotNet.DataFrames`](docs/dataframes.md) · [`PyDotNet.Torch`](docs/torch.md) · [`PyDotNet.Matplotlib`](docs/matplotlib.md) · [`PyDotNet.Extensions.Hosting`](docs/hosting.md) · `PyDotNet.LangChain` _(planned)_
 
 [![Sponsor me](https://img.shields.io/badge/Sponsor-me-pink?style=flat&logo=github-sponsors)](https://github.com/sponsors/zcsizmadia)
 [![Build](https://github.com/zcsizmadia/PyDotNet/actions/workflows/build.yml/badge.svg)](https://github.com/zcsizmadia/PyDotNet/actions/workflows/build.yml)
@@ -34,6 +34,7 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 - [Working with Python objects](#working-with-python-objects)
 - [Type marshaling](#type-marshaling)
 - [Callbacks](#callbacks)
+- [Hosting and dependency injection](#hosting-and-dependency-injection)
 - [Typed Python collections](#typed-python-collections)
 - [Tuple marshaling](#tuple-marshaling)
 - [Weak references](#weak-references)
@@ -1534,6 +1535,10 @@ dotnet run --project samples/PyDotNet.Sample.Doctor
 # Callbacks: hand .NET methods to Python as callables.
 # Covers sorted(key=...), keyword binding, and exceptions in both directions.
 dotnet run --project samples/PyDotNet.Sample.Callbacks
+
+# Hosting: AddPyDotNet in a generic host — injected interpreter, health check,
+# and the drain on shutdown, with no PyRuntime.Shutdown() call anywhere.
+dotnet run --project samples/PyDotNet.Sample.Hosting
 ```
 
 ### Benchmarks
@@ -1592,6 +1597,7 @@ Each plugin is a separate NuGet package with zero-copy data sharing, async reduc
 | **PyTorch** | `PyDotNet.Torch` | ✅ Released | [docs/torch.md](docs/torch.md) |
 | **LangChain** | `PyDotNet.LangChain` | 🗓 Planned | — |
 | **Matplotlib** | `PyDotNet.Matplotlib` | ✅ Released | [docs/matplotlib.md](docs/matplotlib.md) |
+| **Hosting / DI** | `PyDotNet.Extensions.Hosting` | ✅ Released | [docs/hosting.md](docs/hosting.md) |
 
 ### Python API coverage
 
@@ -1615,6 +1621,39 @@ PyDotNet also publishes opt-in OpenTelemetry-compatible activities and metrics t
 Async calls run on a process-wide persistent `asyncio` event loop with configurable
 admission control, Python-side cancellation propagation, and graceful runtime draining.
 See [Production async hosting](docs/async-hosting.md) for configuration and lifecycle guidance.
+
+## Hosting and dependency injection
+
+`PyDotNet.Extensions.Hosting` plugs the runtime into a `Microsoft.Extensions.Hosting`
+application, so startup and shutdown ordering belong to the host rather than to a
+hand-rolled `IHostedService` that has to remember `PyRuntime.Shutdown()` on every exit path:
+
+```csharp
+builder.Services.AddPyDotNet();
+builder.Services.AddHealthChecks().AddPyDotNet();
+```
+
+```csharp
+app.MapGet("/summary", (PyInterpreter python) =>
+{
+    using var result = python.Evaluate("analytics.summarise()");
+    return result.As<string>();
+});
+```
+
+Interpreter settings bind from the `PyDotNet` configuration section, so which interpreter a
+deployment uses — the setting most likely to differ between environments — changes without
+a rebuild. `PyInterpreter` is injectable and disposed with its scope. The host's logger is
+forwarded before `Initialize`, so interpreter discovery findings and the virtual environment
+mismatch warning are logged rather than discarded. Shutdown drains in-flight Python async
+work within `AsyncShutdownTimeout`.
+
+The health check reports `Healthy`, `Degraded` (a virtual environment mismatch) or
+`Unhealthy` (the runtime is not running), and carries the resolved library, version and
+`sys.path` settings — so a deployment running the wrong interpreter can be diagnosed from a
+health endpoint rather than by shelling into the container.
+
+See [Hosting and dependency injection](docs/hosting.md) for the full option reference.
 
 ## Roadmap
 

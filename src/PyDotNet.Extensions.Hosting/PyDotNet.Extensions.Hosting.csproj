@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>$(DefaultTargetFrameworks)</TargetFrameworks>
+    <OutputType>Library</OutputType>
+    <RootNamespace>PyDotNet.Extensions.Hosting</RootNamespace>
+    <AssemblyName>PyDotNet.Extensions.Hosting</AssemblyName>
+    <Description>Microsoft.Extensions.Hosting and dependency injection integration for PyDotNet — configuration binding, startup and graceful shutdown, and a health check.</Description>
+    <PackageTags>python;interop;dotnet;hosting;dependency-injection;aspnetcore;healthcheck</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IsPackable>true</IsPackable>
+    <PackageReadmeFile>hosting.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <!-- No baseline exists for a package that has never shipped, so validation has nothing
+       to compare against and would fail the build looking for it. Remove this once the
+       first version is published; from then on the repository-wide baseline applies and
+       breaking changes are caught like everywhere else. -->
+  <PropertyGroup>
+    <EnablePackageValidation>false</EnablePackageValidation>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)../../docs/hosting.md"
+          Pack="true" PackagePath="/"
+          Condition="Exists('$(MSBuildThisFileDirectory)../../docs/hosting.md')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Not the Abstractions package alone: IHealthChecksBuilder and AddCheck<T>, which
+         the registration extension is written against, live here. -->
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../PyDotNet/PyDotNet.csproj" />
+  </ItemGroup>
+
+</Project>

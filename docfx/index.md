@@ -29,6 +29,7 @@ Console.WriteLine(result.As<double>());   // 12
 | **[Async hosting](../docs/async-hosting.md)** | Driving Python `asyncio` from .NET tasks in production |
 | **[Exception handling](../docs/exceptions.md)** | Catching Python errors by type, and following their causes |
 | **[Callbacks](../docs/callbacks.md)** | Passing .NET methods to Python as callables |
+| **[Hosting and dependency injection](../docs/hosting.md)** | AddPyDotNet, configuration binding, and the health check |
 | **[Performance](../docs/performance.md)** | Benchmarks, and where the zero-copy paths apply |
 | **[Observability](../docs/observability.md)** | OpenTelemetry traces and metrics |
 
@@ -42,6 +43,7 @@ Typed, idiomatic C# wrappers for popular Python libraries, built on the core run
 | `PyDotNet.DataFrames` | [Pandas and Polars](../docs/dataframes.md) |
 | `PyDotNet.Torch` | [PyTorch](../docs/torch.md) |
 | `PyDotNet.Matplotlib` | [Matplotlib](../docs/matplotlib.md) |
+| `PyDotNet.Extensions.Hosting` | [Hosting and dependency injection](../docs/hosting.md) |
 
 ## Supported versions
 

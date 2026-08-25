@@ -1,6 +1,6 @@
 # Changelog
 
-Notable changes to PyDotNet and its plugin packages. All five packages version together.
+Notable changes to PyDotNet and its plugin packages. All six packages version together.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Since v1.2.0
@@ -41,6 +41,16 @@ previously published version, and the build fails on an unintended breaking API 
 - **Marshaling for `BigInteger`, `Guid`, `DateOnly` and `TimeOnly`**, mapping to Python
   `int`, `uuid.UUID`, `datetime.date` and `datetime.time`.
   ([#65](https://github.com/zcsizmadia/PyDotNet/issues/65))
+- **`PyDotNet.Extensions.Hosting`**, a new package integrating with
+  `Microsoft.Extensions.Hosting`. `services.AddPyDotNet()` registers a hosted service that
+  initializes the runtime at startup and drains it at shutdown, binds the interpreter
+  settings from the `PyDotNet` configuration section so a deployment can change which
+  interpreter it uses without a rebuild, forwards the host's `ILoggerFactory` before
+  initialization, and makes `PyInterpreter` injectable.
+  `services.AddHealthChecks().AddPyDotNet()` adds a check reporting the runtime's state and
+  which interpreter was actually resolved — `Degraded` on a virtual environment mismatch,
+  which is advisory rather than fatal but should not be invisible either.
+  ([#68](https://github.com/zcsizmadia/PyDotNet/issues/68))
 - **.NET delegates can be passed to Python as callables.** Any `Action` or `Func<>`
   marshals to a Python function, so a .NET method can go where Python expects one —
   `key=` to `sorted()`, `DataFrame.apply`, an event handler, a hook, business logic a
@@ -125,6 +135,9 @@ previously published version, and the build fails on an unintended breaking API 
   ([#46](https://github.com/zcsizmadia/PyDotNet/pull/46))
 - Recorded sub-interpreters and the outstanding smaller items on the roadmap.
   ([#56](https://github.com/zcsizmadia/PyDotNet/pull/56))
+- A [Hosting and dependency injection](docs/hosting.md) guide covering registration,
+  configuration binding, startup and shutdown ordering, and the health check.
+  ([#68](https://github.com/zcsizmadia/PyDotNet/issues/68))
 - A [Callbacks](docs/callbacks.md) guide covering the argument rules, the exception mapping
   in both directions, and what holding the GIL means for a callback.
   ([#66](https://github.com/zcsizmadia/PyDotNet/issues/66))

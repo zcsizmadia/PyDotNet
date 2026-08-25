@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/PyDotNet.DataFrames/PyDotNet.DataFrames.csproj" />
+    <Project Path="src/PyDotNet.Extensions.Hosting/PyDotNet.Extensions.Hosting.csproj" />
     <Project Path="src/PyDotNet.Matplotlib/PyDotNet.Matplotlib.csproj" />
     <Project Path="src/PyDotNet.NumPy/PyDotNet.NumPy.csproj" />
     <Project Path="src/PyDotNet.Torch/PyDotNet.Torch.csproj" />
@@ -8,6 +9,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/PyDotNet.DataFrames.Tests/PyDotNet.DataFrames.Tests.csproj" />
+    <Project Path="tests/PyDotNet.Extensions.Hosting.Tests/PyDotNet.Extensions.Hosting.Tests.csproj" />
     <Project Path="tests/PyDotNet.Lifecycle.Tests/PyDotNet.Lifecycle.Tests.csproj" />
     <Project Path="tests/PyDotNet.Matplotlib.Tests/PyDotNet.Matplotlib.Tests.csproj" />
     <Project Path="tests/PyDotNet.NumPy.Tests/PyDotNet.NumPy.Tests.csproj" />
@@ -38,6 +40,7 @@
     <Project Path="samples/PyDotNet.Sample.Isolation/PyDotNet.Sample.Isolation.csproj" />
     <Project Path="samples/PyDotNet.Sample.Doctor/PyDotNet.Sample.Doctor.csproj" />
     <Project Path="samples/PyDotNet.Sample.Callbacks/PyDotNet.Sample.Callbacks.csproj" />
+    <Project Path="samples/PyDotNet.Sample.Hosting/PyDotNet.Sample.Hosting.csproj" />
   </Folder>
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks/PyDotNet.Benchmarks/PyDotNet.Benchmarks.csproj" />
