@@ -41,6 +41,20 @@ previously published version, and the build fails on an unintended breaking API 
 - **Marshaling for `BigInteger`, `Guid`, `DateOnly` and `TimeOnly`**, mapping to Python
   `int`, `uuid.UUID`, `datetime.date` and `datetime.time`.
   ([#65](https://github.com/zcsizmadia/PyDotNet/issues/65))
+- **Typed Python exceptions.** `PyValueError`, `PyTypeError`, `PyKeyError`, `PyIndexError`,
+  `PyAttributeError`, `PyImportError`, `PyModuleNotFoundError`, `PyOSError` and
+  `PyStopIteration` can be caught by type instead of by comparing `PythonExceptionType`
+  against a string. Matching follows the Python type's MRO, so a `ValueError` subclass
+  defined in Python is caught by `catch (PyValueError)` exactly as `except ValueError`
+  would catch it. All derive from `PythonException`, so existing catch blocks are
+  unaffected, and a type without a mapping still arrives as `PythonException` rather than
+  being forced into an approximate one.
+  ([#67](https://github.com/zcsizmadia/PyDotNet/issues/67))
+- **Chained Python exceptions reach `InnerException`.** Both `raise X from Y` (`__cause__`)
+  and an error raised while another was being handled (`__context__`) are followed, and
+  `raise X from None` suppresses the chain as Python intends. `ToString()` prints the chain
+  cause-first, the way Python does.
+  ([#67](https://github.com/zcsizmadia/PyDotNet/issues/67))
 
 ### Changed
 
@@ -70,6 +84,15 @@ previously published version, and the build fails on an unintended breaking API 
   ignored.** The options were absent from the configuration signature, so the call returned
   successfully having changed nothing — and with `Prepend` that discard decides which module
   gets imported. ([#71](https://github.com/zcsizmadia/PyDotNet/issues/71))
+- **`interp.Execute(code)` reports what Python actually raised.** It ran through
+  `PyRun_SimpleString`, which prints the traceback to stderr and *clears* the error before
+  returning, so nothing was left for `PythonException` to fetch: every failure surfaced as
+  `PyRuntimeException: PyRun_SimpleString returned a non-zero exit code`, with the type,
+  message and traceback already discarded to a stream the host may not even be watching. A
+  `SystemExit` also terminated the host process outright. `Execute` now uses the same
+  `PyRun_String` path as `Evaluate`; the three internal helper-installation sites that had
+  copied the pattern are fixed with it.
+  ([#67](https://github.com/zcsizmadia/PyDotNet/issues/67))
 
 ### Documentation
 
@@ -77,6 +100,9 @@ previously published version, and the build fails on an unintended breaking API 
   ([#46](https://github.com/zcsizmadia/PyDotNet/pull/46))
 - Recorded sub-interpreters and the outstanding smaller items on the roadmap.
   ([#56](https://github.com/zcsizmadia/PyDotNet/pull/56))
+- An [Exception handling](docs/exceptions.md) guide covering the typed exceptions, how MRO
+  matching picks one, and how Python's two chaining mechanisms map onto `InnerException`.
+  ([#67](https://github.com/zcsizmadia/PyDotNet/issues/67))
 
 ### Internal
 
