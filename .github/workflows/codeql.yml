@@ -1,0 +1,63 @@
+name: CodeQL
+
+# Static analysis of the C# sources.
+#
+# The interop layer in src/PyDotNet/Native/ is where this earns its keep: raw pointers,
+# manual reference counting, and P/Invoke signatures that the compiler cannot check against
+# the CPython functions they bind to.
+#
+# Build mode is manual rather than autobuild, because the projects multi-target three
+# frameworks and analysing one is enough — autobuild would analyse the same sources three
+# times over.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Weekly, so newly published rules reach the code without waiting for the next commit.
+    - cron: '27 4 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze C#
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # upload results to the Security tab
+      actions: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install .NET SDKs
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: csharp
+          build-mode: manual
+          queries: security-and-quality
+
+      # Only the shipping libraries are analysed. Tests and samples would add findings that
+      # say nothing about what users install.
+      - name: Build
+        shell: bash
+        run: |
+          for proj in src/*/; do
+            dotnet build "$proj" -c Release -f net10.0
+          done
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:csharp"

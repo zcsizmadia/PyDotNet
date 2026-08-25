@@ -1,0 +1,38 @@
+name: Feature request
+description: Suggest a capability PyDotNet does not have.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Worth a look at the [roadmap](https://github.com/zcsizmadia/PyDotNet#roadmap)
+        first — several larger items are already planned and tracked.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: |
+        The problem rather than the proposed API. Knowing what you are building usually
+        suggests a better shape than the one either of us would guess first.
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What do you do today
+      description: |
+        Dropping to raw `PyObject` calls, shelling out to a subprocess, or doing without —
+        all useful signals about how much the gap costs.
+    validations:
+      required: false
+
+  - type: textarea
+    id: sketch
+    attributes:
+      label: How it might look
+      description: A sketch of the API you would want to write against. Rough is fine.
+      render: csharp
+    validations:
+      required: false

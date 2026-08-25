@@ -1,0 +1,78 @@
+name: Bug report
+description: Something in PyDotNet does not behave as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Most PyDotNet problems come down to *which interpreter actually got loaded*, so the
+        environment questions below matter more than they usually would.
+
+        For a security problem, please use
+        [private vulnerability reporting](https://github.com/zcsizmadia/PyDotNet/security/advisories/new)
+        instead of this form.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what happened instead. Include the exception and stack trace if there is one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: The smallest code that shows the problem — both the C# and any Python it runs.
+      render: csharp
+    validations:
+      required: true
+
+  - type: textarea
+    id: effective-configuration
+    attributes:
+      label: Effective configuration
+      description: |
+        Output of `Console.WriteLine(PyRuntime.EffectiveConfiguration);` after `Initialize`.
+
+        This records the interpreter that was actually resolved — library path, version,
+        program name, `sys.path` entries and placement, GIL state — which is usually the
+        first thing worth checking when imports resolve from somewhere unexpected.
+      placeholder: Python 3.14.4 [GIL] via PyInitConfig; library '...'; program name ...
+      render: text
+    validations:
+      required: false
+
+  - type: input
+    id: pydotnet-version
+    attributes:
+      label: PyDotNet version
+      placeholder: "1.2.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: tfm
+    attributes:
+      label: Target framework
+      options: ["net8.0", "net9.0", "net10.0", "other"]
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and architecture
+      placeholder: "Windows 11 x64 / Ubuntu 24.04 arm64 / macOS 15 Apple Silicon"
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python version and how it was installed
+      description: Whether it is a free-threaded build, and whether a virtual environment is involved.
+      placeholder: "3.14.4, python.org installer, standard GIL build, using a venv"
+    validations:
+      required: true

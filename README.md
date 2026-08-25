@@ -62,6 +62,7 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 - [Platform support](#platform-support)
 - [Plugins](#plugins)
 - [Roadmap](#roadmap)
+- [Contributing](#contributing)
 
 ---
 
@@ -1565,3 +1566,18 @@ Recently completed and no longer listed above: the NuGet package icon, the
 [changelog](CHANGELOG.md), effective-configuration introspection
 (`PyRuntime.EffectiveConfiguration`) and `sys.path` precedence
 (`PySysPathPlacement`).
+
+---
+
+## Contributing
+
+Setup, the gated tests that need a process of their own, and what CI expects are in
+[CONTRIBUTING.md](CONTRIBUTING.md). Bug reports go through the
+[issue templates](https://github.com/zcsizmadia/PyDotNet/issues/new/choose).
+
+Security problems should be reported privately rather than as an issue — see
+[SECURITY.md](SECURITY.md).
+
+## License
+
+MIT — see [LICENSE](LICENSE).
