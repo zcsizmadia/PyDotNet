@@ -80,20 +80,39 @@ jobs:
         if: matrix.pack-nupkg == true
         shell: bash
         run: |
-          REPORT=$(find TestResults -name '*.cobertura.xml' | head -n 1)
+          # One report per test assembly per target framework, so there are more than twenty.
+          # They are summed rather than sampled: taking any single report's line-rate reports
+          # one assembly's view as if it were the whole project, which is off by a factor of
+          # two or three and looks authoritative while being wrong.
+          #
+          # lines-covered and lines-valid sit on each report's root element, so the aggregate
+          # needs no report-generator dependency.
+          REPORTS=$(find TestResults -name '*.cobertura.xml' | wc -l)
 
-          if [ -z "$REPORT" ]; then
+          if [ "$REPORTS" -eq 0 ]; then
             echo "::error::Coverage was requested but no cobertura report was produced."
             exit 1
           fi
 
-          # Read the rate straight out of the report rather than adding a report-generator
-          # dependency for one number.
-          RATE=$(sed -n 's/.*line-rate="\([0-9.]*\)".*/\1/p' "$REPORT" | head -n 1)
-          PERCENT=$(awk "BEGIN { printf \"%.1f\", $RATE * 100 }")
+          read -r COVERED VALID < <(
+            find TestResults -name '*.cobertura.xml' -exec \
+              sed -n 's/.*lines-covered="\([0-9]*\)".*lines-valid="\([0-9]*\)".*/\1 \2/p' {} \; \
+            | awk '{ c += $1; v += $2 } END { print c, v }'
+          )
 
-          echo "Line coverage: ${PERCENT}%"
-          echo "### Line coverage: ${PERCENT}%" >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$VALID" ] || [ "$VALID" -eq 0 ]; then
+            echo "::error::Coverage reports contained no measurable lines."
+            exit 1
+          fi
+
+          PERCENT=$(awk "BEGIN { printf \"%.1f\", $COVERED / $VALID * 100 }")
+
+          echo "Line coverage: ${PERCENT}% ($COVERED/$VALID lines across $REPORTS reports)"
+          {
+            echo "### Coverage"
+            echo ""
+            echo "Line coverage **${PERCENT}%** — $COVERED of $VALID lines, aggregated over $REPORTS reports."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload coverage report
         if: matrix.pack-nupkg == true
