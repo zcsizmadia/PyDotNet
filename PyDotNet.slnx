@@ -37,6 +37,7 @@
     <Project Path="samples/PyDotNet.Sample.VirtualEnvironment/PyDotNet.Sample.VirtualEnvironment.csproj" />
     <Project Path="samples/PyDotNet.Sample.Isolation/PyDotNet.Sample.Isolation.csproj" />
     <Project Path="samples/PyDotNet.Sample.Doctor/PyDotNet.Sample.Doctor.csproj" />
+    <Project Path="samples/PyDotNet.Sample.Callbacks/PyDotNet.Sample.Callbacks.csproj" />
   </Folder>
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks/PyDotNet.Benchmarks/PyDotNet.Benchmarks.csproj" />

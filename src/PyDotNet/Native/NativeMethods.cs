@@ -422,6 +422,20 @@ internal static partial class NativeMethods
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern IntPtr PySlice_New(IntPtr start, IntPtr stop, IntPtr step);
 
+    // ── C functions (used to expose .NET delegates as Python callables) ────
+
+    /// <summary>
+    /// Wraps a <c>PyMethodDef</c> as a callable Python object. <paramref name="self"/> is
+    /// passed back as the first argument on every call, which is how the trampoline finds
+    /// the delegate it belongs to.
+    /// </summary>
+    /// <remarks>
+    /// CPython stores the <c>PyMethodDef</c> pointer rather than copying it, so the block
+    /// must outlive the returned callable.
+    /// </remarks>
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern IntPtr PyCFunction_NewEx(IntPtr methodDef, IntPtr self, IntPtr module);
+
     // ── Capsule (used by DLPack) ───────────────────────────────────────────
 
     /// <remarks>Returns the pointer inside the capsule, or null if the name does not match.</remarks>

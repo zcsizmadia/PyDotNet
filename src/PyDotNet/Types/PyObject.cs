@@ -479,6 +479,47 @@ public class PyObject : IDisposable
     }
 
     /// <summary>
+    /// Wraps a .NET delegate as a Python callable, so it can be passed anywhere Python
+    /// expects a function — <c>key=</c> to <c>sorted()</c>, <c>DataFrame.apply</c>, an
+    /// event handler, a hook.
+    /// </summary>
+    /// <param name="target">The delegate to expose. Any <c>Action</c> or <c>Func&lt;&gt;</c>.</param>
+    /// <returns>
+    /// A new callable. Disposing it releases PyDotNet's reference; the delegate stays alive
+    /// for as long as Python still holds one.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// Arguments and the return value are marshaled by the usual rules, and Python's
+    /// argument-passing rules apply: keyword arguments match parameter names, and a missing
+    /// or unexpected argument raises <c>TypeError</c> rather than being ignored.
+    /// </para>
+    /// <para>
+    /// An exception thrown inside the delegate becomes a Python exception. One that
+    /// originally came from Python is raised again as the type it was, so a round trip
+    /// through .NET preserves it.
+    /// </para>
+    /// <para>
+    /// The delegate runs with the GIL held, as any Python callable does. Delegates
+    /// returning <see cref="Task"/> or <see cref="ValueTask"/> are rejected: awaiting them
+    /// from Python is not supported yet.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="PyInteropException">
+    /// The delegate cannot be exposed — it takes a by-reference parameter, or returns an
+    /// awaitable.
+    /// </exception>
+    public static PyObject FromDelegate(Delegate target)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        PyRuntime.EnsureInitialized();
+
+        using var gil = new GilScope();
+
+        return FromNewReference(DelegateBridge.Create(target));
+    }
+
+    /// <summary>
     /// Creates a <see cref="PyObject"/> that takes ownership of a new reference.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

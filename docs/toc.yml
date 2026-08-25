@@ -6,6 +6,8 @@
   href: async-hosting.md
 - name: Exception handling
   href: exceptions.md
+- name: Callbacks
+  href: callbacks.md
 - name: Performance
   href: performance.md
 - name: Observability
