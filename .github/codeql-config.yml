@@ -1,0 +1,24 @@
+name: PyDotNet CodeQL configuration
+
+# The broad suite, deliberately. The quality queries are not decoration: they found the
+# resource leak in DLPackTensor.Export, where a pin, an unmanaged block and a GCHandle
+# were dropped if anything threw before the capsule that owns them existed.
+queries:
+  - uses: security-and-quality
+
+query-filters:
+  # PyDotNet exists to call CPython through P/Invoke, so these two rules report the
+  # premise rather than a finding — one alert per call site, and the count grows with
+  # every binding added. They accounted for 1,069 of the 1,092 alerts left after the
+  # warning-level ones were fixed, which is how a Security tab stops being read: not
+  # because anyone decided to ignore it, but because 98% of it is inert and the 23 notes
+  # that might matter are invisible among them.
+  #
+  # Scoped to two rule IDs on purpose. A severity filter would suppress future findings
+  # that have nothing to do with interop, and a path filter is not an option here at all:
+  # paths / paths-ignore apply to compiled languages only when analysing without building,
+  # and this workflow builds each project so the interop layer is analysed accurately.
+  - exclude:
+      id: cs/call-to-unmanaged-code
+  - exclude:
+      id: cs/unmanaged-code
