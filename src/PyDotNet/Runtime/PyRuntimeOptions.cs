@@ -162,14 +162,9 @@ public sealed class PyRuntimeOptions
         SysPathPlacement != PySysPathPlacement.Append;
 
     /// <summary>
-    /// Gets the program name to hand to CPython: <see cref="ProgramName"/> when set,
-    /// otherwise the interpreter derived from <see cref="VirtualEnvironmentPath"/>.
-    /// Returns <see langword="null"/> when neither is configured.
-    /// </summary>
-    /// <summary>
-    /// Produces a stable description of the pre-initialization settings, used to tell an
-    /// idempotent repeat <c>Initialize</c> call from one that asks for a configuration
-    /// CPython can no longer be given.
+    /// Produces a stable description of the settings the runtime was brought up with, used
+    /// to tell an idempotent repeat <c>Initialize</c> call from one asking for a
+    /// configuration that can no longer be applied.
     /// </summary>
     internal string InterpreterConfigurationSignature()
     {
@@ -189,6 +184,11 @@ public sealed class PyRuntimeOptions
             AdditionalSysPaths.Count == 0 ? "-" : string.Join(';', AdditionalSysPaths));
     }
 
+    /// <summary>
+    /// Gets the program name to hand to CPython: <see cref="ProgramName"/> when set,
+    /// otherwise the interpreter derived from <see cref="VirtualEnvironmentPath"/>.
+    /// Returns <see langword="null"/> when neither is configured.
+    /// </summary>
     internal string? ResolveProgramName()
     {
         if (ProgramName is not null)
