@@ -99,7 +99,7 @@ public sealed class PyAsyncQueue<T> : IDisposable
         PyRuntime.EnsureInitialized();
 
         // Inject helper class once per interpreter session
-        using (var gil = new GilScope())
+        using (new GilScope())
         {
             var mainModule = NativeMethods.PyImport_AddModule("__main__"); // borrowed
             var globals    = NativeMethods.PyModule_GetDict(mainModule);   // borrowed

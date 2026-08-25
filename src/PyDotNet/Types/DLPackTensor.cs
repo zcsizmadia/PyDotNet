@@ -389,11 +389,57 @@ public sealed unsafe class DLPackTensor : IDisposable
         //   [DLManagedTensor | long[ndim] shape | long[ndim] strides]
         var tensorSize = sizeof(DLManagedTensor);
         var arrayBytes = ndim * sizeof(long);
-        var block = (byte*)NativeMemory.AllocZeroed((nuint)(tensorSize + 2 * arrayBytes));
 
-        var ctx = new ExportContext { Pin = pin, Block = (IntPtr)block };
-        var gcHandle = GCHandle.Alloc(ctx);
+        byte* block = null;
+        var gcHandle = default(GCHandle);
 
+        // Everything from here on owns a resource that only the capsule's destructor would
+        // otherwise release, and the capsule does not exist yet. Anything that throws in
+        // between — an allocation failure, or acquiring the GIL against a runtime that is
+        // not initialized — would leak the pin, the unmanaged block and the handle with
+        // nothing left holding a reference to them.
+        try
+        {
+            block = (byte*)NativeMemory.AllocZeroed((nuint)(tensorSize + 2 * arrayBytes));
+
+            var ctx = new ExportContext { Pin = pin, Block = (IntPtr)block };
+            gcHandle = GCHandle.Alloc(ctx);
+
+            return BuildCapsule(pin, block, gcHandle, shape, ndim, dtype, tensorSize, arrayBytes);
+        }
+        catch
+        {
+            _exportContexts.TryRemove((nint)block, out _);
+
+            if (gcHandle.IsAllocated)
+            {
+                gcHandle.Free();
+            }
+
+            if (block is not null)
+            {
+                NativeMemory.Free(block);
+            }
+
+            pin.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Fills the allocated block and wraps it as a capsule. Split out so
+    /// <see cref="Export{T}"/> can release everything it allocated if any step throws.
+    /// </summary>
+    private static PyObject BuildCapsule(
+        MemoryHandle pin,
+        byte* block,
+        GCHandle gcHandle,
+        long[] shape,
+        int ndim,
+        DLDataType dtype,
+        int tensorSize,
+        int arrayBytes)
+    {
         var managed = (DLManagedTensor*)block;
         var shapeArr = (long*)(block + tensorSize);
         var strideArr = (long*)(block + tensorSize + arrayBytes);
@@ -435,11 +481,9 @@ public sealed unsafe class DLPackTensor : IDisposable
 
         if (capsule == IntPtr.Zero)
         {
-            // Cleanup on failure: free everything before throwing.
-            _exportContexts.TryRemove((nint)block, out _);
-            gcHandle.Free();
-            pin.Dispose();
-            NativeMemory.Free(block);
+            // Throw and let Export's catch release the pin, the block and the handle. It
+            // has to handle every other failure on this path anyway, and cleaning up here
+            // as well would free each of them twice.
             PythonException.ThrowIfPythonErrorOccurred();
             throw new PyInteropException("PyCapsule_New returned null.");
         }

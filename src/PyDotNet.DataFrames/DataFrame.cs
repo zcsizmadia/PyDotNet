@@ -940,7 +940,7 @@ public sealed class DataFrame : IDisposable
         using var interpreter = PyRuntime.CreateInterpreter();
         using var main = interpreter.ImportModule("__main__");
 
-        using (var gil = new GilScope())
+        using (new GilScope())
         {
             if (NativeMethods.PyObject_HasAttrString(main.Handle, PandasQueryHelperName) == 0)
             {

@@ -249,14 +249,14 @@ internal sealed class AsyncioHost : IDisposable
             }
         }
 
-        using (var gil = new GilScope())
+        using (new GilScope())
         {
             CallNoArgs(_host, "wake_completion_pump");
         }
         _completionThread.Join();
 
         var host = Interlocked.Exchange(ref _host, IntPtr.Zero);
-        using (var gil = new GilScope())
+        using (new GilScope())
         {
             CallNoArgs(host, "close");
             NativeMethods.Py_DecRef(host);

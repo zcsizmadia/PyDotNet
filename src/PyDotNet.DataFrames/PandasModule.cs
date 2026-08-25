@@ -61,10 +61,10 @@ public sealed class PandasModule : IDisposable
         var dict = new Dictionary<string, object?>(columns.Count);
         foreach (var (name, arr) in columns)
         {
-            dict[name] = (object?)arr;
+            dict[name] = arr;
         }
 
-        using var result = _pd.Call("DataFrame", (object?)dict);
+        using var result = _pd.Call("DataFrame", dict);
         return DataFrame.FromPyObject(result);
     }
 

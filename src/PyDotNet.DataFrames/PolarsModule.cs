@@ -61,10 +61,10 @@ public sealed class PolarsModule : IDisposable
         var dict = new Dictionary<string, object?>(columns.Count);
         foreach (var (name, arr) in columns)
         {
-            dict[name] = (object?)arr;
+            dict[name] = arr;
         }
 
-        using var result = _pl.Call("DataFrame", (object?)dict);
+        using var result = _pl.Call("DataFrame", dict);
         return DataFrame.FromPyObject(result);
     }
 
