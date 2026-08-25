@@ -41,12 +41,15 @@ jobs:
             9.0.x
             10.0.x
 
+      # Query selection and filtering live in the config file rather than here, so the
+      # whole policy — which suite runs, and what is deliberately excluded from it — is
+      # readable in one place, with the reasons attached.
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
           languages: csharp
           build-mode: manual
-          queries: security-and-quality
+          config-file: ./.github/codeql-config.yml
 
       # Only the shipping libraries are analysed. Tests and samples would add findings that
       # say nothing about what users install.
