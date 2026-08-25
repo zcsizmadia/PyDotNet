@@ -39,8 +39,18 @@ export PYDOTNET_PYTHON_LIBRARY=/usr/lib/x86_64-linux-gnu/libpython3.14.so.1.0
 
 If something resolves from an unexpected place, print what the runtime actually chose:
 
+```bash
+dotnet run --project samples/PyDotNet.Sample.Doctor
+```
+
+That prints `PyRuntime.GetDiagnosticsReport()` for the interpreter this machine resolves —
+the library and version, `sys.path` in search order with any configured entries flagged, and
+`sys.prefix` against `sys.base_prefix` so an inactive virtual environment is visible. Pass a
+virtual environment path to check that one instead. From inside an application, the same
+report comes from:
+
 ```csharp
-Console.WriteLine(PyRuntime.EffectiveConfiguration);
+PyRuntime.WriteDiagnosticsReport(Console.Out);
 ```
 
 ## Tests that need a process of their own

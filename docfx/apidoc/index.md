@@ -11,7 +11,7 @@ documentation — the build enforces it, so nothing here is an empty stub.
 | `PyDotNet.Types` | `PyObject`, `PyModule`, `PyBuffer`, `PyMemoryView`, `PyTensor`, the typed collections and the async primitives |
 | `PyDotNet.Marshaling` | Conversion between .NET and Python values |
 | `PyDotNet.Async` | The `asyncio` bridge |
-| `PyDotNet.Exceptions` | `PythonException`, `PyRuntimeException`, `PyInteropException` |
+| `PyDotNet.Exceptions` | `PythonException` and the typed subclasses it is caught by, `PyRuntimeException`, `PyInteropException` |
 | `PyDotNet.Native` | `PythonLibraryLocator` and the interop surface |
 
 ## Plugin packages
@@ -22,6 +22,7 @@ documentation — the build enforces it, so nothing here is an empty stub.
 | `PyDotNet.DataFrames` | `PyDotNet.DataFrames` |
 | `PyDotNet.Torch` | `PyDotNet.Torch` |
 | `PyDotNet.Matplotlib` | `PyDotNet.Matplotlib` |
+| `PyDotNet.Extensions.Hosting` | `PyDotNet.Extensions.Hosting` |
 
 ## Starting points
 
@@ -32,4 +33,6 @@ Most applications begin with three types, all in `PyDotNet.Runtime`:
 - **`PyInterpreter`** — import modules and run code
 
 For pointing PyDotNet at a virtual environment or isolating the interpreter, see
-[Virtual environments and isolation](../../docs/virtual-environments.md).
+[Virtual environments and isolation](../../docs/virtual-environments.md). In an application
+with a host, `services.AddPyDotNet()` does the lifecycle instead — see
+[Hosting and dependency injection](../../docs/hosting.md).

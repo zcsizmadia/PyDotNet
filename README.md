@@ -85,6 +85,7 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 | **PyModule async** | `module.CallAsync<T>()`, `module.CallAsync()`, `module.CallAsyncEnumerable<T>()` — invoke coroutines and generators by name, without a `GetFunction` call |
 | **EvaluateAsync** | `interp.EvaluateAsync<T>(expr)` evaluates a Python expression and drives the resulting coroutine to completion |
 | **Keyword arguments** | Pass `kwargs` to any Python callable via `Call(args, kwargs)`, `CallAsync(args, kwargs)`, and `CallAsyncEnumerable(args, kwargs)` |
+| **Callbacks** | `Action` / `Func<>` marshal to Python callables — `key=` to `sorted()`, `DataFrame.apply`, hooks; exceptions cross both ways |
 | **Typed collections** | `PyList<T>` and `PyDict<TKey,TValue>` — strongly-typed wrappers with `IReadOnlyList<T>` / `IReadOnlyDictionary<TKey,TValue>` |
 | **Tuple marshaling** | `ValueTuple<T1…T7>` is automatically converted to/from Python tuples via `ToPython()`, `As<T>()`, and `Call<T>()` |
 | **Weak references** | `PyWeakRef<T>` / `PyWeakRef.Create<T>()` — track Python objects without preventing GC |
@@ -93,7 +94,10 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 | **Pre-compiled code** | `interp.Compile()` / `interp.CompileExpression()` produce a `PyCompiledCode` object — parse and compile once, execute thousands of times; supports per-call variable injection via `Execute(locals)` / `Evaluate(locals)` |
 | **GIL-safe threading** | Automatic GIL acquire/release via `GilScope`; free-threaded Python 3.13+ detected |
 | **Auto-discovery** | Finds the Python shared library from PATH, registry (Windows), or environment variable |
+| **Typed exceptions** | Python errors arrive as `PyValueError`, `PyKeyError`, `PyModuleNotFoundError` and the rest, matched through the Python type's MRO, with `__cause__` chaining into `InnerException` |
 | **Structured logging** | Plugs into `Microsoft.Extensions.Logging` |
+| **Diagnostics report** | `PyRuntime.WriteDiagnosticsReport()` prints which interpreter was actually resolved, `sys.path` in search order, and whether a virtual environment is really active |
+| **Hosting integration** | `services.AddPyDotNet()` handles startup, graceful drain, configuration binding, and an injectable `PyInterpreter` |
 | **Multi-targeting** | Targets .NET 8, .NET 9, and .NET 10 from a single NuGet package |
 
 ---
@@ -119,6 +123,9 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
   without copying — even on CUDA devices.
 - **Async-first** — `await fn.CallAsync<T>()` drives Python `asyncio` coroutines natively from
   .NET `Task`s, including concurrent fan-out with `Task.WhenAll`.
+- **Errors that survive the boundary** — Python exceptions arrive as types you can `catch`,
+  carrying their cause chain, and a .NET exception thrown inside a callback becomes a Python
+  exception rather than disappearing.
 - **Modern .NET** — targets net8.0 / net9.0 / net10.0 from a single package; built with
   `Nullable`, `TreatWarningsAsErrors`, and `AnalysisLevel=latest-recommended`.
 
@@ -1742,13 +1749,17 @@ Independent of the items above, and each small enough to land on its own:
 |---|---|
 | **Python 3.15 in the enforced matrix** | 3.15 is verified and runs as an informational job. Promoting it waits on third-party wheels — `pyarrow`, `matplotlib` and `torch` have none yet. Tracked in [#43](https://github.com/zcsizmadia/PyDotNet/issues/43) |
 | **Interpreter restart** | `Py_Finalize` is deliberately never called, so a process gets one interpreter configuration for its lifetime. Investigated in [#61](https://github.com/zcsizmadia/PyDotNet/issues/61): finalizing is viable on current CPython, but a C extension cannot be re-imported afterwards (`cannot load module more than once per process`), so a general restart would fail on the first real workload |
-| **Delegates as Python callables** | .NET callbacks cannot currently be passed into Python. Tracked in [#66](https://github.com/zcsizmadia/PyDotNet/issues/66) |
-| **Richer exceptions and marshaling coverage** | cause chaining and typed exception subtypes ([#67](https://github.com/zcsizmadia/PyDotNet/issues/67)); `decimal` precision, `Guid`, `DateOnly`/`TimeOnly`, `BigInteger` ([#65](https://github.com/zcsizmadia/PyDotNet/issues/65)) |
+| **Async callbacks** | A delegate returning `Task` or `ValueTask` is rejected: awaiting a .NET task from Python needs the asyncio bridge to drive it. See [Callbacks](docs/callbacks.md) |
+| **DataFrame reshaping** | apply/map, pivot, window and rolling functions, and multi-index operations remain unwrapped |
 
-Recently completed and no longer listed above: the NuGet package icon, the
-[changelog](CHANGELOG.md), effective-configuration introspection
-(`PyRuntime.EffectiveConfiguration`) and `sys.path` precedence
-(`PySysPathPlacement`).
+Recently completed and no longer listed above: [callbacks](docs/callbacks.md) — .NET
+delegates as Python callables; [typed exceptions and cause chaining](docs/exceptions.md);
+[hosting and dependency injection](docs/hosting.md); the
+[diagnostics report](#the-diagnostics-report); DataFrame transformation verbs
+([DataFrames](docs/dataframes.md)); marshaling for `decimal`, `Guid`, `DateOnly`,
+`TimeOnly` and `BigInteger`; effective-configuration introspection
+(`PyRuntime.EffectiveConfiguration`); `sys.path` precedence (`PySysPathPlacement`); the
+NuGet package icon; and the [changelog](CHANGELOG.md).
 
 ---
 
