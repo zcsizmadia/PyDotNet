@@ -60,6 +60,7 @@ public sealed class PyInterpreter : IDisposable
     /// Executes a Python code string in the <c>__main__</c> module's global scope.
     /// </summary>
     /// <param name="code">Python source code to execute.</param>
+    /// <exception cref="PythonException">Thrown when the Python code raises an exception.</exception>
     public void Execute(string code)
     {
         ArgumentNullException.ThrowIfNull(code);
@@ -70,11 +71,11 @@ public sealed class PyInterpreter : IDisposable
         try
         {
             using var gil = new GilScope();
-            var result = NativeMethods.PyRun_SimpleString(code);
-            if (result != 0)
+
+            if (!PythonCode.TryRunInMainModule(code))
             {
                 PythonException.ThrowIfPythonErrorOccurred();
-                throw new PyRuntimeException("PyRun_SimpleString returned a non-zero exit code.");
+                throw new PyRuntimeException("PyRun_String returned null for unknown reasons.");
             }
         }
         catch (Exception ex)

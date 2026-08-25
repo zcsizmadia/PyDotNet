@@ -107,8 +107,7 @@ public sealed class PyAsyncQueue<T> : IDisposable
             var sentinel = NativeMethods.PyDict_GetItemString(globals, SetupVar); // borrowed or null
             if (sentinel == IntPtr.Zero)
             {
-                var result = NativeMethods.PyRun_SimpleString(SetupCode);
-                if (result != 0)
+                if (!PythonCode.TryRunInMainModule(SetupCode))
                 {
                     PythonException.ThrowIfPythonErrorOccurred();
                     throw new PyRuntimeException("Failed to inject _DotNetAsyncQueue setup code.");

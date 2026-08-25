@@ -27,6 +27,7 @@ Console.WriteLine(result.As<double>());   // 12
 | **[API reference](apidoc/index.md)** | Every public type and member, generated from the source |
 | **[Virtual environments and isolation](../docs/virtual-environments.md)** | Point PyDotNet at a venv; control what the interpreter can see |
 | **[Async hosting](../docs/async-hosting.md)** | Driving Python `asyncio` from .NET tasks in production |
+| **[Exception handling](../docs/exceptions.md)** | Catching Python errors by type, and following their causes |
 | **[Performance](../docs/performance.md)** | Benchmarks, and where the zero-copy paths apply |
 | **[Observability](../docs/observability.md)** | OpenTelemetry traces and metrics |
 

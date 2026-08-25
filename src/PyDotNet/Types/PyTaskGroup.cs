@@ -276,8 +276,7 @@ public sealed class PyTaskGroup : IDisposable
             return; // already installed
         }
 
-        var rc = NativeMethods.PyRun_SimpleString(code);
-        if (rc != 0)
+        if (!PythonCode.TryRunInMainModule(code))
         {
             PythonException.ThrowIfPythonErrorOccurred();
             throw new PyRuntimeException("Failed to install PyTaskGroup helper code.");

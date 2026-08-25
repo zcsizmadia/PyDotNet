@@ -345,9 +345,9 @@ internal static partial class NativeMethods
 
     // ── Code execution ─────────────────────────────────────────────────────
 
-    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    internal static extern int PyRun_SimpleString(
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string command);
+    // PyRun_SimpleString is deliberately not bound: it prints the traceback to stderr and
+    // clears the error, and treats SystemExit as a request to end the host process. Run
+    // statements through PythonCode.TryRunInMainModule instead.
 
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern IntPtr PyRun_String(

@@ -75,7 +75,7 @@ internal sealed class AsyncioHost : IDisposable
 
     internal static AsyncioHost Start(int maximumConcurrency)
     {
-        if (NativeMethods.PyRun_SimpleString(SetupCode) != 0)
+        if (!PythonCode.TryRunInMainModule(SetupCode))
         {
             PythonException.ThrowIfPythonErrorOccurred();
             throw new PyInteropException("Failed to start the persistent Python asyncio host.");

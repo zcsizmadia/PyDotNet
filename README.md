@@ -1285,6 +1285,44 @@ catch (PythonException ex)
 }
 ```
 
+The common Python exceptions also arrive as derived types, so they can be caught
+directly instead of by comparing `PythonExceptionType` against a string:
+
+```csharp
+try
+{
+    using var config = interp.ImportModule("myapp.config");
+}
+catch (PyModuleNotFoundError ex)
+{
+    // The interpreter is not the one you expected. PyRuntime.EffectiveConfiguration
+    // reports which one was actually resolved.
+    Console.WriteLine($"{ex.Message}; loaded {PyRuntime.EffectiveConfiguration?.LibraryPath}");
+}
+```
+
+Matching follows the Python type's MRO, so a `class ConfigError(ValueError)` defined
+in Python is caught by `catch (PyValueError)` exactly as `except ValueError` would
+catch it, while `PythonExceptionType` still reports `ConfigError`. Anything without a
+mapping arrives as `PythonException` itself, and catching `PythonException` still
+catches every one of them.
+
+`PyValueError` · `PyTypeError` · `PyKeyError` · `PyIndexError` · `PyAttributeError` ·
+`PyImportError` · `PyModuleNotFoundError` · `PyOSError` · `PyStopIteration`
+
+Chained Python exceptions (`raise ... from ...`, or an error raised while another was
+being handled) are carried through `InnerException`, so the original failure is
+available rather than being flattened away:
+
+```csharp
+catch (PythonException ex) when (ex.InnerException is PyKeyError missingKey)
+{
+    Console.WriteLine($"{ex.Message}, caused by {missingKey.Message}");
+}
+```
+
+See [Exception handling](docs/exceptions.md) for the full mapping and chaining rules.
+
 ---
 
 ## Thread safety and the GIL
