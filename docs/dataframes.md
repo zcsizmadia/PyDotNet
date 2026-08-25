@@ -101,16 +101,23 @@ PyRuntime.Shutdown();
 | `Head(int n = 5)` | Returns the first `n` rows. |
 | `Tail(int n = 5)` | Returns the last `n` rows. |
 | `Sort(string column, bool descending = false)` | Returns a new `DataFrame` sorted by `column`. |
+| `Sort(params DataFrameSortKey[] keys)` | Sorts by several columns, each with its own direction. |
 | `Filter(string column, object value)` | Returns rows where `column == value`. |
+| `Filter(Series mask)` | Returns rows where a boolean `Series` is true. |
+| `Query(string predicate)` | Returns rows matching a predicate expression. |
 | `Drop(params string[] columns)` | Returns a new `DataFrame` without the specified columns. |
 | `Rename(string oldName, string newName)` | Returns a new `DataFrame` with one column renamed. |
 | `FillNull(double value)` | Replaces all nulls / NaNs with `value`. |
-| `Join(DataFrame other, string on, string how = "inner")` | Joins two DataFrames on a key column. `how`: `"inner"`, `"left"`, `"right"`, `"outer"`. |
+| `Join(DataFrame other, string on, string how = "inner")` | Joins two DataFrames on a key column, with the backend's own spelling of `how`. |
+| `Join(DataFrame other, string on, DataFrameJoinType how)` | The same, with the join type named rather than spelled. |
+| `CrossJoin(DataFrame other)` | Every combination of rows from both frames. |
 | `Describe()` | Returns descriptive statistics (count, mean, std, min, max, percentiles). |
+| `GroupBy(params string[] keys)` | Returns a `DataFrameGroupBy` over one or more key columns. |
 | `GroupBySum(string groupCol, string valueCol)` | Group-by aggregate: sum of `valueCol` per `groupCol`. |
 | `GroupByMean(string groupCol, string valueCol)` | Group-by aggregate: mean of `valueCol` per `groupCol`. |
 | `ToCsv(string path)` | Writes the DataFrame to a CSV file. |
 | `ToParquet(string path)` | Writes the DataFrame to a Parquet file. |
+| `ToJson(string path)` | Writes the DataFrame as a JSON array of row objects. |
 | `ToArrowBatches()` | Returns an `ArrowBatchReader` over the Arrow C stream. |
 | `DataFrame.FromPyObject(obj)` | Wraps an existing `PyObject` as a `DataFrame`. |
 | `DataFrame.IsDataFrame(obj)` | Heuristic check for `columns` + `shape` attributes. |
@@ -126,6 +133,7 @@ PyRuntime.Shutdown();
 | `Max()` | Maximum value as `double`. |
 | `Std()` | Standard deviation as `double`. |
 | `Unique()` | Returns a new `Series` with deduplicated values. |
+| `Eq` / `Ne` / `Gt` / `Ge` / `Lt` / `Le` | Compare every element with a value, returning a boolean `Series` for `DataFrame.Filter`. |
 | `ToArray<T>()` | Copies numeric column data via `to_numpy()` + buffer protocol. |
 | `ToStringArray()` | Copies string column data via `to_list()`. |
 
@@ -178,6 +186,88 @@ Arrow format codes mapped to .NET names:
 | `Bool` | `"b"` | packed bits |
 | `String` | `"u"` | UTF-8 (int32 offsets) |
 | `LargeString` | `"U"` | UTF-8 (int64 offsets) |
+
+## Transformations
+
+Row selection, grouping, joining and ordering are backend-neutral: the same call means the
+same thing whether the frame came from pandas or polars, which is more work than it sounds
+because the two libraries disagree about more than spelling.
+
+### Selecting rows
+
+```csharp
+using var large = sales.Query("amount > 150 and region == 'EU'");
+```
+
+pandas evaluates this with `DataFrame.query`; polars evaluates it as a SQL `WHERE` clause.
+The two dialects agree on ordinary predicates — comparisons, `and`, `or`, quoted string
+literals — which is the range the method is for. Beyond that they diverge: pandas accepts
+Python expressions and `@variable` references, polars accepts SQL functions.
+
+For a predicate that must be portable in every detail, build a mask instead. The comparison
+methods on `Series` are named identically in both libraries, so there is no divergence to
+be exposed to:
+
+```csharp
+using var amounts = sales["amount"];
+using var mask = amounts.Gt(150.0);
+using var large = sales.Filter(mask);
+```
+
+### Grouping and aggregating
+
+```csharp
+using var summary = sales
+    .GroupBy("region", "quarter")
+    .Agg(
+        DataFrameAggregation.Sum("revenue", "total"),
+        DataFrameAggregation.Mean("margin"),
+        DataFrameAggregation.DistinctCount("rep", "reps"));
+```
+
+The result has the key columns first, then one column per aggregation in the order given.
+Aggregations without an alias are named `{column}_{function}` — `margin_mean` above.
+
+That naming is deliberate rather than inherited. Left to themselves, pandas returns the
+keys as an *index* and polars returns them as *columns*, they name aggregated columns
+differently, and polars does not promise a row order at all. A caller would have to know
+which library it had. `GroupBy` pins all three.
+
+`DistinctCount` is the one aggregate whose method name genuinely differs — `nunique` in
+pandas, `n_unique` in polars.
+
+### Joining
+
+```csharp
+using var enriched = sales.Join(regions, "region", DataFrameJoinType.FullOuter);
+```
+
+Naming the join type rather than passing a string is what makes this portable: a full outer
+join is `outer` in pandas and `full` in polars, and polars deprecated the pandas spelling.
+
+`Semi` and `Anti` are polars-only. On a pandas frame they raise `NotSupportedException`
+naming the alternative, rather than producing a wrong answer or an opaque Python error.
+`CrossJoin` is a separate method because a cross join has no key column and both backends
+reject one being supplied.
+
+### Ordering
+
+```csharp
+using var ranked = sales.Sort(
+    new DataFrameSortKey("region"),
+    new DataFrameSortKey("revenue", Descending: true));
+```
+
+Direction is per column, which a single flag cannot express. pandas asks which columns
+*ascend* and polars asks which *descend* — same information, opposite polarity, inverted
+here so the caller writes it once.
+
+### Writing
+
+`ToCsv`, `ToParquet` and `ToJson` mirror the read paths. `ToJson` writes an array of row
+objects on both backends: pandas defaults `to_json` to a column-oriented layout and polars
+writes rows, so the orientation is stated explicitly and the output is readable by something
+that does not know which library wrote it.
 
 ## Zero-copy usage notes
 

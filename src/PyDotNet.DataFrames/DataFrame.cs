@@ -1,5 +1,6 @@
 using PyDotNet.Exceptions;
 using PyDotNet.Native;
+using PyDotNet.Runtime;
 using PyDotNet.Types;
 
 namespace PyDotNet.DataFrames;
@@ -18,13 +19,19 @@ namespace PyDotNet.DataFrames;
 /// instance remains valid until it too is disposed.
 /// </para>
 /// <para>
-/// <b>Python API coverage:</b> ~20 operations are wrapped across <c>PandasModule</c>, <c>PolarsModule</c>,
-/// <c>DataFrame</c>, <c>Series</c>, and <c>RecordBatch</c>.
-/// The wrapped surface covers construction from .NET dictionaries, reading CSV/Parquet/JSON,
-/// column listing, row count, column indexing, <c>Select</c> (column projection),
-/// zero-copy Apache Arrow batch export, and typed element extraction from <c>Series</c>.
-/// Notable gaps include: filter/query, groupby/aggregate, merge/join, sort, apply/map,
-/// describe/info, to_csv/to_parquet, and pivot operations.
+/// <b>Python API coverage:</b> the wrapped surface spans <c>PandasModule</c>,
+/// <c>PolarsModule</c>, <c>DataFrame</c>, <c>Series</c>, and <c>RecordBatch</c>: construction
+/// from .NET dictionaries, reading CSV/Parquet/JSON, schema and row count, column indexing
+/// and projection, zero-copy Apache Arrow batch export, typed element extraction from
+/// <c>Series</c>, row selection (<see cref="Query"/>, <see cref="Filter(Series)"/>),
+/// grouping and aggregation (<see cref="GroupBy"/>), combination
+/// (<see cref="Join(DataFrame, string, DataFrameJoinType)"/>, <see cref="CrossJoin"/>),
+/// ordering (<see cref="Sort(DataFrameSortKey[])"/>), and the CSV, Parquet and JSON write
+/// paths.
+/// </para>
+/// <para>
+/// Remaining gaps: apply/map, pivot and reshape, window and rolling functions, and
+/// multi-index operations.
 /// </para>
 /// </remarks>
 public sealed class DataFrame : IDisposable
@@ -525,6 +532,440 @@ public sealed class DataFrame : IDisposable
             using var fn = _obj.GetAttr("write_parquet");
             using var _ = fn.Call(path);
         }
+    }
+
+    // ── Row selection ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the rows matching a predicate expression.
+    /// </summary>
+    /// <param name="predicate">
+    /// A boolean expression over the columns, such as <c>"amount > 100 and region == 'EU'"</c>.
+    /// </param>
+    /// <returns>A new DataFrame. The caller must dispose it.</returns>
+    /// <remarks>
+    /// <para>
+    /// pandas evaluates this with <c>DataFrame.query</c>; polars evaluates it as the
+    /// <c>WHERE</c> clause of a SQL statement over the frame. The two dialects agree on
+    /// ordinary predicates — comparisons (<c>&gt;</c>, <c>&gt;=</c>, <c>==</c>, <c>!=</c>),
+    /// <c>and</c>, <c>or</c>, and quoted string literals — which is the range this is meant
+    /// for. Anything beyond that is backend-specific: pandas accepts Python expressions and
+    /// <c>@variable</c> references, polars accepts SQL functions, and neither accepts the
+    /// other's.
+    /// </para>
+    /// <para>
+    /// For a predicate that has to be portable in every detail, build a mask with the
+    /// comparison methods on <see cref="Series"/> and use
+    /// <see cref="Filter(Series)"/> — those go through the same operation on both.
+    /// </para>
+    /// </remarks>
+    public DataFrame Query(string predicate)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(predicate);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (IsPandas())
+        {
+            using var helper = GetPandasQueryHelper();
+            using var result = helper.Call(_obj, predicate);
+            return FromPyObject(result);
+        }
+
+        using var gil = new GilScope();
+        if (NativeMethods.PyObject_HasAttrString(_obj.Handle, "sql") == 0)
+        {
+            NativeMethods.PyErr_Clear();
+            throw new NotSupportedException(
+                "Query requires DataFrame.sql, which polars added in 0.20.31. Upgrade polars, "
+                + "or build a mask with the comparison methods on Series and use Filter.");
+        }
+
+        using var sqlFn = _obj.GetAttr("sql");
+        using var sqlResult = sqlFn.Call($"SELECT * FROM self WHERE {predicate}");
+        return FromPyObject(sqlResult);
+    }
+
+    /// <summary>
+    /// Returns the rows where <paramref name="mask"/> is true.
+    /// </summary>
+    /// <param name="mask">
+    /// A boolean Series of the same length as this frame, typically produced by one of the
+    /// comparison methods on <see cref="Series"/>.
+    /// </param>
+    /// <returns>A new DataFrame. The caller must dispose it.</returns>
+    /// <example>
+    /// <code>
+    /// using var amounts = frame["amount"];
+    /// using var large = amounts.Gt(1000);
+    /// using var filtered = frame.Filter(large);
+    /// </code>
+    /// </example>
+    public DataFrame Filter(Series mask)
+    {
+        ArgumentNullException.ThrowIfNull(mask);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        return ApplyMask(mask.PyObj);
+    }
+
+    // ── Grouping ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Groups the rows by one or more key columns. Nothing is computed until an
+    /// aggregation is applied.
+    /// </summary>
+    /// <param name="keys">The key columns to group by.</param>
+    /// <example>
+    /// <code>
+    /// using var totals = frame
+    ///     .GroupBy("region", "quarter")
+    ///     .Agg(
+    ///         DataFrameAggregation.Sum("revenue", "total"),
+    ///         DataFrameAggregation.Mean("margin"));
+    /// </code>
+    /// </example>
+    public DataFrameGroupBy GroupBy(params string[] keys)
+    {
+        ArgumentNullException.ThrowIfNull(keys);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (keys.Length == 0)
+        {
+            throw new ArgumentException("At least one key column is required.", nameof(keys));
+        }
+
+        foreach (var key in keys)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(key, nameof(keys));
+        }
+
+        return new DataFrameGroupBy(this, keys);
+    }
+
+    // ── Combination ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Joins this DataFrame with <paramref name="other"/> on a common key column.
+    /// </summary>
+    /// <param name="other">The DataFrame to join with.</param>
+    /// <param name="on">The key column, which must exist in both frames.</param>
+    /// <param name="how">How rows are matched.</param>
+    /// <returns>A new DataFrame. The caller must dispose it.</returns>
+    /// <exception cref="NotSupportedException">
+    /// <see cref="DataFrameJoinType.Semi"/> or <see cref="DataFrameJoinType.Anti"/> was
+    /// requested on a pandas frame, which has no equivalent.
+    /// </exception>
+    public DataFrame Join(DataFrame other, string on, DataFrameJoinType how)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        ArgumentException.ThrowIfNullOrWhiteSpace(on);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        var pandas = IsPandas();
+
+        if (pandas && how is DataFrameJoinType.Semi or DataFrameJoinType.Anti)
+        {
+            throw new NotSupportedException(
+                $"pandas has no {how} join. Filter with isin on the key column instead, "
+                + "or use polars, where the join type is native.");
+        }
+
+        return JoinCore(other, on, JoinTypeName(how, pandas));
+    }
+
+    /// <summary>
+    /// Returns every combination of rows from this DataFrame and <paramref name="other"/>.
+    /// </summary>
+    /// <param name="other">The DataFrame to combine with.</param>
+    /// <returns>A new DataFrame with <c>RowCount × other.RowCount</c> rows.</returns>
+    /// <remarks>
+    /// Separate from <see cref="Join(DataFrame, string, DataFrameJoinType)"/> because a
+    /// cross join has no key column, and both backends reject one being supplied. A
+    /// nullable parameter would have made that a runtime error instead of a signature.
+    /// </remarks>
+    public DataFrame CrossJoin(DataFrame other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (IsPandas())
+        {
+            using var fn = _obj.GetAttr("merge");
+            using var result = fn.Call(
+                [other._obj],
+                new Dictionary<string, object?> { ["how"] = "cross" });
+            return FromPyObject(result);
+        }
+        else
+        {
+            using var fn = _obj.GetAttr("join");
+            using var result = fn.Call(
+                [other._obj],
+                new Dictionary<string, object?> { ["how"] = "cross" });
+            return FromPyObject(result);
+        }
+    }
+
+    // ── Ordering ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns a new DataFrame sorted by several columns, each with its own direction.
+    /// </summary>
+    /// <param name="keys">The sort keys, applied in order.</param>
+    /// <returns>A new DataFrame. The caller must dispose it.</returns>
+    /// <example>
+    /// <code>
+    /// using var ranked = frame.Sort(
+    ///     new DataFrameSortKey("region"),
+    ///     new DataFrameSortKey("revenue", Descending: true));
+    /// </code>
+    /// </example>
+    public DataFrame Sort(params DataFrameSortKey[] keys)
+    {
+        ArgumentNullException.ThrowIfNull(keys);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (keys.Length == 0)
+        {
+            throw new ArgumentException("At least one sort key is required.", nameof(keys));
+        }
+
+        var columns = new string[keys.Length];
+        var flags = new object?[keys.Length];
+
+        for (var i = 0; i < keys.Length; i++)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(keys[i].Column, nameof(keys));
+            columns[i] = keys[i].Column;
+
+            // pandas asks which columns ascend, polars which descend. Same information,
+            // opposite polarity — inverting here is why the caller writes it once.
+            flags[i] = IsPandas() ? !keys[i].Descending : keys[i].Descending;
+        }
+
+        if (IsPandas())
+        {
+            using var fn = _obj.GetAttr("sort_values");
+            using var result = fn.Call(
+                [columns],
+                new Dictionary<string, object?> { ["ascending"] = flags });
+            return FromPyObject(result);
+        }
+        else
+        {
+            using var fn = _obj.GetAttr("sort");
+            using var result = fn.Call(
+                [columns],
+                new Dictionary<string, object?> { ["descending"] = flags });
+            return FromPyObject(result);
+        }
+    }
+
+    // ── Write paths ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Saves the DataFrame to a JSON file at <paramref name="path"/>, as an array of
+    /// row objects.
+    /// </summary>
+    /// <param name="path">Destination file path.</param>
+    /// <remarks>
+    /// pandas defaults <c>to_json</c> to a column-oriented layout and polars writes rows,
+    /// so the orientation is stated explicitly rather than left to the backend: the same
+    /// call produces the same file either way, which is what makes the output readable by
+    /// something that does not know which library wrote it.
+    /// </remarks>
+    public void ToJson(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (IsPandas())
+        {
+            using var fn = _obj.GetAttr("to_json");
+            using var _ = fn.Call(
+                [path],
+                new Dictionary<string, object?> { ["orient"] = "records" });
+        }
+        else
+        {
+            using var fn = _obj.GetAttr("write_json");
+            using var _ = fn.Call(path);
+        }
+    }
+
+    // ── Operation helpers ─────────────────────────────────────────────────
+
+    /// <summary>Selects the rows where a boolean Python object is true.</summary>
+    private DataFrame ApplyMask(PyObject mask)
+    {
+        if (IsPandas())
+        {
+            // Pandas: df[bool_mask]
+            using var gil = new GilScope();
+            var result = NativeMethods.PyObject_GetItem(_obj.Handle, mask.Handle);
+            if (result == IntPtr.Zero) { PythonException.ThrowIfPythonErrorOccurred(); }
+            return new DataFrame(PyObject.FromNewReference(result));
+        }
+        else
+        {
+            // Polars: df.filter(bool_mask)
+            using var fn = _obj.GetAttr("filter");
+            using var result = fn.Call([mask]);
+            return FromPyObject(result);
+        }
+    }
+
+    private DataFrame JoinCore(DataFrame other, string on, string how)
+    {
+        if (IsPandas())
+        {
+            using var fn = _obj.GetAttr("merge");
+            using var result = fn.Call(
+                [other._obj],
+                new Dictionary<string, object?> { ["on"] = on, ["how"] = how });
+            return FromPyObject(result);
+        }
+        else
+        {
+            using var fn = _obj.GetAttr("join");
+            using var result = fn.Call(
+                [other._obj],
+                new Dictionary<string, object?> { ["on"] = on, ["how"] = how });
+            return FromPyObject(result);
+        }
+    }
+
+    // The two libraries name a full outer join differently, and polars deprecated the
+    // pandas spelling — which is the whole reason DataFrameJoinType exists.
+    private static string JoinTypeName(DataFrameJoinType how, bool pandas) => how switch
+    {
+        DataFrameJoinType.Inner => "inner",
+        DataFrameJoinType.Left => "left",
+        DataFrameJoinType.Right => "right",
+        DataFrameJoinType.FullOuter => pandas ? "outer" : "full",
+        DataFrameJoinType.Semi => "semi",
+        DataFrameJoinType.Anti => "anti",
+        _ => throw new ArgumentOutOfRangeException(nameof(how), how, "Unknown join type."),
+    };
+
+    /// <summary>
+    /// Backs <see cref="DataFrameGroupBy.Agg(DataFrameAggregation[])"/>.
+    /// </summary>
+    /// <remarks>
+    /// Both branches produce the same shape — key columns first, then one column per
+    /// aggregation in the order given, named by the aggregation. Left to their own
+    /// defaults, pandas returns the keys as an index and polars returns them as columns,
+    /// and the aggregated columns are named differently again; a caller would have to know
+    /// which backend it had.
+    /// </remarks>
+    internal DataFrame AggregateGroups(string[] keys, DataFrameAggregation[] aggregations)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (IsPandas())
+        {
+            // df.groupby(keys, as_index=False).agg(**{alias: (column, func)})
+            using var groupByFn = _obj.GetAttr("groupby");
+            using var grouped = groupByFn.Call(
+                [keys],
+                new Dictionary<string, object?> { ["as_index"] = false });
+
+            var named = new Dictionary<string, object?>(StringComparer.Ordinal);
+            foreach (var aggregation in aggregations)
+            {
+                // pandas named aggregation: each keyword maps to a (column, function) pair.
+                named[aggregation.ResolvedAlias] = (aggregation.Column, aggregation.PandasName);
+            }
+
+            using var aggFn = grouped.GetAttr("agg");
+            using var result = aggFn.Call([], named);
+            return FromPyObject(result);
+        }
+
+        // df.group_by(keys, maintain_order=True).agg([pl.col(c).<fn>().alias(a), ...])
+        //
+        // maintain_order because polars does not otherwise promise an order, and a result
+        // whose rows move between runs is one nobody can assert against.
+        var expressions = new List<PyObject>(aggregations.Length);
+        try
+        {
+            using var polars = ImportPolars();
+            using var colFn = polars.GetAttr("col");
+
+            foreach (var aggregation in aggregations)
+            {
+                using var column = colFn.Call(aggregation.Column);
+                using var aggFn = column.GetAttr(aggregation.PolarsName);
+                using var aggregated = aggFn.Call();
+                using var aliasFn = aggregated.GetAttr("alias");
+
+                expressions.Add(aliasFn.Call(aggregation.ResolvedAlias));
+            }
+
+            using var groupByFn = _obj.GetAttr("group_by");
+            using var grouped = groupByFn.Call(
+                [keys],
+                new Dictionary<string, object?> { ["maintain_order"] = true });
+
+            using var applyFn = grouped.GetAttr("agg");
+            using var result = applyFn.Call([expressions]);
+            return FromPyObject(result);
+        }
+        finally
+        {
+            foreach (var expression in expressions)
+            {
+                expression.Dispose();
+            }
+        }
+    }
+
+    // pandas resolves the names in a query expression by walking the caller's Python stack
+    // frames — DataFrame.query adds a level, DataFrame.eval adds another, and Scope reads
+    // sys._getframe() unconditionally, before it looks at any dictionaries it was given.
+    // Embedded there are no frames beneath the call at all, so df.query(...) invoked
+    // directly from .NET fails with "call stack is not deep enough" regardless of what is
+    // passed. Calling through a Python function supplies the frame it is looking for; the
+    // depth then matches an ordinary module-level call, which is what pandas is written
+    // against.
+    private const string PandasQueryHelperName = "_pydotnet_df_query";
+
+    private const string PandasQueryHelperSource = """
+        def _pydotnet_df_query(frame, expression):
+            return frame.query(expression)
+        """;
+
+    private static PyObject GetPandasQueryHelper()
+    {
+        using var interpreter = PyRuntime.CreateInterpreter();
+        using var main = interpreter.ImportModule("__main__");
+
+        using (var gil = new GilScope())
+        {
+            if (NativeMethods.PyObject_HasAttrString(main.Handle, PandasQueryHelperName) == 0)
+            {
+                NativeMethods.PyErr_Clear();
+                interpreter.Execute(PandasQueryHelperSource);
+            }
+        }
+
+        return main.GetAttr(PandasQueryHelperName);
+    }
+
+    // The frame is a polars one, so polars is already imported; this returns the module
+    // from sys.modules rather than executing anything.
+    private static PyObject ImportPolars()
+    {
+        using var gil = new GilScope();
+
+        var module = NativeMethods.PyImport_ImportModule("polars");
+        if (module == IntPtr.Zero)
+        {
+            PythonException.ThrowIfPythonErrorOccurred();
+            throw new PyInteropException("Could not import polars.");
+        }
+
+        return PyObject.FromNewReference(module);
     }
 
     // ── Disposal ──────────────────────────────────────────────────────────

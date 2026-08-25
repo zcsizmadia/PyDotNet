@@ -41,6 +41,14 @@ previously published version, and the build fails on an unintended breaking API 
 - **Marshaling for `BigInteger`, `Guid`, `DateOnly` and `TimeOnly`**, mapping to Python
   `int`, `uuid.UUID`, `datetime.date` and `datetime.time`.
   ([#65](https://github.com/zcsizmadia/PyDotNet/issues/65))
+- **DataFrame transformations.** `Query` for predicate expressions, `Filter(Series)` with
+  comparison methods on `Series` for masks, `GroupBy(...).Agg(...)` with multi-key grouping
+  and named aggregations, `Join` with a `DataFrameJoinType` enum plus `CrossJoin`,
+  multi-column `Sort` with per-column direction, and `ToJson`. Every one behaves identically
+  on pandas and polars, which takes more than spelling: a full outer join is `outer` in one
+  and `full` in the other, sort direction is expressed with opposite polarity, and group
+  keys come back as an index in one and as columns in the other.
+  ([#69](https://github.com/zcsizmadia/PyDotNet/issues/69))
 - **`PyDotNet.Extensions.Hosting`**, a new package integrating with
   `Microsoft.Extensions.Hosting`. `services.AddPyDotNet()` registers a hosted service that
   initializes the runtime at startup and drains it at shutdown, binds the interpreter
@@ -135,6 +143,10 @@ previously published version, and the build fails on an unintended breaking API 
   ([#46](https://github.com/zcsizmadia/PyDotNet/pull/46))
 - Recorded sub-interpreters and the outstanding smaller items on the roadmap.
   ([#56](https://github.com/zcsizmadia/PyDotNet/pull/56))
+- The DataFrames coverage table and the `DataFrame` class summary listed filter/query,
+  groupby/aggregate, merge/join, sort, describe and the CSV/Parquet write paths as gaps
+  after they had been implemented. Both now match the code.
+  ([#69](https://github.com/zcsizmadia/PyDotNet/issues/69))
 - A [Hosting and dependency injection](docs/hosting.md) guide covering registration,
   configuration binding, startup and shutdown ordering, and the health check.
   ([#68](https://github.com/zcsizmadia/PyDotNet/issues/68))

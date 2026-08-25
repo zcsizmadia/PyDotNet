@@ -132,6 +132,52 @@ public sealed class Series : IDisposable
         return new Series(result);
     }
 
+    // ── Comparisons ───────────────────────────────────────────────────────
+    //
+    // Each returns a boolean Series to pass to DataFrame.Filter. pandas and polars name
+    // these identically, so there is no backend branch here — unlike almost everything on
+    // DataFrame, and the reason a mask is the portable way to express a predicate.
+
+    /// <summary>Elements equal to <paramref name="value"/>.</summary>
+    /// <param name="value">The value to compare against.</param>
+    /// <returns>A boolean Series. The caller must dispose it.</returns>
+    public Series Eq(object value) => Compare("eq", value);
+
+    /// <summary>Elements not equal to <paramref name="value"/>.</summary>
+    /// <param name="value">The value to compare against.</param>
+    /// <returns>A boolean Series. The caller must dispose it.</returns>
+    public Series Ne(object value) => Compare("ne", value);
+
+    /// <summary>Elements greater than <paramref name="value"/>.</summary>
+    /// <param name="value">The value to compare against.</param>
+    /// <returns>A boolean Series. The caller must dispose it.</returns>
+    public Series Gt(object value) => Compare("gt", value);
+
+    /// <summary>Elements greater than or equal to <paramref name="value"/>.</summary>
+    /// <param name="value">The value to compare against.</param>
+    /// <returns>A boolean Series. The caller must dispose it.</returns>
+    public Series Ge(object value) => Compare("ge", value);
+
+    /// <summary>Elements less than <paramref name="value"/>.</summary>
+    /// <param name="value">The value to compare against.</param>
+    /// <returns>A boolean Series. The caller must dispose it.</returns>
+    public Series Lt(object value) => Compare("lt", value);
+
+    /// <summary>Elements less than or equal to <paramref name="value"/>.</summary>
+    /// <param name="value">The value to compare against.</param>
+    /// <returns>A boolean Series. The caller must dispose it.</returns>
+    public Series Le(object value) => Compare("le", value);
+
+    private Series Compare(string method, object value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        using var fn = _obj.GetAttr(method);
+        var result = fn.Call(value); // don't dispose — owned by returned Series
+        return new Series(result);
+    }
+
     // ── Internal access ───────────────────────────────────────────────────
 
     // Exposed for DataFrame.Filter to build equality mask via series.eq(value).
