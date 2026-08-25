@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
@@ -206,6 +207,44 @@ public static class PyRuntime
     {
         EnsureInitialized();
         return new PyInterpreter(_logger);
+    }
+
+    /// <summary>
+    /// Writes a human-readable diagnostics report describing the interpreter this process
+    /// actually resolved.
+    /// </summary>
+    /// <param name="writer">Where to write the report. Not disposed.</param>
+    /// <remarks>
+    /// <para>
+    /// The report covers what <see cref="EffectiveConfiguration"/> records, plus the live
+    /// interpreter state that answers the question it cannot: <c>sys.path</c> in search
+    /// order with the caller's own entries flagged, <c>sys.prefix</c> against
+    /// <c>sys.base_prefix</c> so an inactive virtual environment is visible, and the
+    /// isolation flags CPython settled on. Any virtual environment mismatch warning is
+    /// printed first.
+    /// </para>
+    /// <para>
+    /// Intended for startup logs, a diagnostics endpoint, and bug reports. It never
+    /// throws and never requires the runtime to be initialized — a report from a process
+    /// whose <see cref="Initialize()"/> failed is precisely the interesting case — so
+    /// values that cannot be read are marked unavailable rather than aborting the report.
+    /// </para>
+    /// </remarks>
+    public static void WriteDiagnosticsReport(TextWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        PyDiagnosticsReport.Write(writer);
+    }
+
+    /// <summary>
+    /// Returns the diagnostics report as a string. See
+    /// <see cref="WriteDiagnosticsReport(TextWriter)"/>.
+    /// </summary>
+    public static string GetDiagnosticsReport()
+    {
+        using var writer = new StringWriter(CultureInfo.InvariantCulture);
+        PyDiagnosticsReport.Write(writer);
+        return writer.ToString();
     }
 
     // ── Internal helpers ──────────────────────────────────────────────────
@@ -802,7 +841,7 @@ public static class PyRuntime
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate IntPtr DlOpenDelegate([MarshalAs(UnmanagedType.LPStr)] string? path, int flags);
 
-    private static StringComparison PathComparison => OperatingSystem.IsWindows()
+    internal static StringComparison PathComparison => OperatingSystem.IsWindows()
         ? StringComparison.OrdinalIgnoreCase
         : StringComparison.Ordinal;
 

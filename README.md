@@ -1239,6 +1239,64 @@ It exposes the loaded library, the Python version (including the release level, 
 
 > Returns `null` before the runtime is initialized.
 
+### The diagnostics report
+
+`EffectiveConfiguration` records what PyDotNet asked for. It cannot say what CPython then did with it — whether the virtual environment actually activated, or where a caller's `sys.path` entries ended up relative to everything else. `WriteDiagnosticsReport` answers both by reading the live interpreter:
+
+```csharp
+PyRuntime.WriteDiagnosticsReport(Console.Out);
+
+// Or, for a diagnostics endpoint or a bug report:
+var report = PyRuntime.GetDiagnosticsReport();
+```
+
+```
+PyDotNet diagnostics report
+===========================
+
+Runtime
+  State                    Running
+  PyDotNet                 1.2.0+192edee
+  Python                   3.14.4
+  Implementation           cpython
+  GIL                      enabled
+  Initialization           PyInitConfig (PEP 741)
+  Library                  /usr/lib/libpython3.14.so
+
+Requested configuration
+  Program name             /srv/app/.venv/bin/python
+  Python home              (not set)
+  Virtual environment      /srv/app/.venv
+  Additional sys.path      1 entry, prepended
+
+Interpreter
+  sys.executable           /srv/app/.venv/bin/python
+  sys.prefix               /srv/app/.venv
+  sys.base_prefix          /usr
+  Virtual environment      active (sys.prefix differs from sys.base_prefix)
+
+Isolation (sys.flags)
+  isolated                 0
+  no_site                  0
+  no_user_site             0
+  ignore_environment       0
+  safe_path                0
+
+sys.path (7 entries, in search order)
+    1  /opt/myapp/overrides   <- added by PyDotNet
+    2  /usr/lib/python314.zip
+  ...
+```
+
+Three things it shows that nothing else does: `sys.path` **in search order** with your own entries flagged, so a shadowed import has a line to blame; `sys.prefix` against `sys.base_prefix`, which is what "is the venv actually active?" means; and any `VirtualEnvironmentWarning`, printed first under a `!! WARNING` banner. A configured path that never reached `sys.path` is called out separately.
+
+It never throws and does not require the runtime to be initialized — a process whose `Initialize()` failed is exactly when it is worth running. Values that cannot be read are marked unavailable rather than aborting the report.
+
+```bash
+dotnet run --project samples/PyDotNet.Sample.Doctor            # this machine's default
+dotnet run --project samples/PyDotNet.Sample.Doctor -- .venv   # against a virtual environment
+```
+
 > These settings are read by CPython during initialization and apply once per process. See **[Virtual environments and isolation](docs/virtual-environments.md)** for the full reference, constraints, and troubleshooting.
 
 ### Environment variable
@@ -1432,6 +1490,10 @@ dotnet run --project samples/PyDotNet.Sample.VirtualEnvironment
 # Isolation: compare sys.flags under default, -I, -s, and -E equivalents.
 # Runs each configuration in its own process, since CPython applies them once.
 dotnet run --project samples/PyDotNet.Sample.Isolation
+
+# Doctor: report which interpreter this machine resolves, and why an import may not.
+# Takes an optional virtual environment path; exits non-zero when something is wrong.
+dotnet run --project samples/PyDotNet.Sample.Doctor
 ```
 
 ### Benchmarks

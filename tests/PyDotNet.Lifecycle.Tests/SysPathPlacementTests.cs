@@ -208,6 +208,49 @@ public sealed class SysPathPlacementTests
     }
 
     /// <summary>
+    /// The diagnostics report has to distinguish the caller's own <c>sys.path</c> entries
+    /// from the interpreter's, because that is the distinction a shadowed import turns on.
+    /// <para>
+    /// This lives here rather than beside the other diagnostics tests because it needs an
+    /// interpreter configured with additional paths, which happens once per process. The
+    /// uninitialized case is checked in the same test for the same reason: this fixture
+    /// owns a process that has not initialized yet, and no other does.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task DiagnosticsReport_FlagsConfiguredSysPathEntries()
+    {
+        var directory = RequirePlacementRun();
+
+        // Before initialization the report must still be produced. A process whose
+        // Initialize() failed is precisely when someone runs the doctor, so throwing here
+        // would withhold the report exactly when it is wanted.
+        var beforeInit = PyRuntime.GetDiagnosticsReport();
+        await Assert.That(beforeInit).Contains("PyDotNet diagnostics report");
+        await Assert.That(beforeInit).Contains(nameof(PyRuntimeState.Uninitialized));
+        await Assert.That(beforeInit).Contains("has not been initialized");
+
+        PyRuntime.Initialize(new PyRuntimeOptions
+        {
+            AdditionalSysPaths = [directory],
+            SysPathPlacement = PySysPathPlacement.Prepend,
+        });
+
+        var report = PyRuntime.GetDiagnosticsReport();
+
+        await Assert.That(report).Contains("1 entry, prepended");
+
+        // The entry is present, at the front, and marked as ours — all three matter. A
+        // reader tracking down a shadowed import needs to know which line to blame.
+        await Assert.That(report)
+            .Contains($"  1  {directory}   <- added by PyDotNet")
+            .Because("the prepended entry is first in search order and is the caller's own");
+
+        // And nothing has gone missing, which the listing alone would not reveal.
+        await Assert.That(report).DoesNotContain("absent from sys.path");
+    }
+
+    /// <summary>
     /// Creates a directory containing a module that shadows one from the standard library,
     /// and returns its full path.
     /// <para>
