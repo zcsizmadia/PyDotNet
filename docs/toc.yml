@@ -8,6 +8,8 @@
   href: exceptions.md
 - name: Callbacks
   href: callbacks.md
+- name: Hosting and dependency injection
+  href: hosting.md
 - name: Performance
   href: performance.md
 - name: Observability
