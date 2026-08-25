@@ -429,11 +429,16 @@ Conversion between .NET and Python types is handled automatically in both direct
 | `null` | `None` |
 | `bool` | `bool` |
 | `int`, `long`, `short`, `byte`, `uint`, `ulong`, `ushort`, `sbyte` | `int` |
-| `float`, `double`, `decimal` | `float` |
+| `BigInteger` | `int` (arbitrary precision, lossless both ways) |
+| `float`, `double` | `float` |
+| `decimal` | `decimal.Decimal` (lossless — **not** `float`) |
 | `string`, `char` | `str` |
 | `byte[]`, `ReadOnlyMemory<byte>` | `bytes` |
 | `DateTime`, `DateTimeOffset` | `datetime.datetime` |
+| `DateOnly` | `datetime.date` |
+| `TimeOnly` | `datetime.time` |
 | `TimeSpan` | `datetime.timedelta` |
+| `Guid` | `uuid.UUID` |
 | `Complex` | `complex` |
 | `PyObject` (and subclasses) | passed through as-is (ref-count bumped) |
 | `T[]`, `IEnumerable<object?>` | `list` |
@@ -449,14 +454,24 @@ Specify the target type via `As<T>()` or `Call<T>()`.
 | `int` | `int` |
 | `long` | `int` |
 | `double`, `float` | `float`, `int` |
+| `decimal` | `decimal.Decimal`, `int`, `float` |
+| `BigInteger` | `int` of any size |
 | `string` | `str` |
 | `byte[]` | `bytes`, `bytearray` |
 | `DateTime` | `datetime.datetime` |
+| `DateOnly` | `datetime.date` |
+| `TimeOnly` | `datetime.time` |
 | `TimeSpan` | `datetime.timedelta` |
+| `Guid` | `uuid.UUID`, `str` |
 | `Complex` | `complex` |
 | `T[]` | `list`, `tuple` |
 | `PyObject` | any (ref-count bumped, caller owns) |
 | `object` | dynamic — best-fit conversion |
+
+> **`decimal` and `BigInteger` are converted through their exact string forms, not through
+> `double` or `Int64`.** A `decimal` is usually chosen precisely because binary floating
+> point would lose the value, and a `BigInteger` because 64 bits are not enough — so a
+> numeric hop in either direction would defeat the point of using the type.
 
 ---
 

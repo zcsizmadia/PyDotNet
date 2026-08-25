@@ -38,6 +38,9 @@ previously published version, and the build fails on an unintended breaking API 
   ([#60](https://github.com/zcsizmadia/PyDotNet/pull/60))
 - A project mark, and with it the NuGet package icon the packages previously lacked.
   ([#59](https://github.com/zcsizmadia/PyDotNet/pull/59))
+- **Marshaling for `BigInteger`, `Guid`, `DateOnly` and `TimeOnly`**, mapping to Python
+  `int`, `uuid.UUID`, `datetime.date` and `datetime.time`.
+  ([#65](https://github.com/zcsizmadia/PyDotNet/issues/65))
 
 ### Changed
 
@@ -55,6 +58,10 @@ previously published version, and the build fails on an unintended breaking API 
   so publishing while the tagged commit was still building would have shipped earlier
   binaries under the new tag, with nothing to catch it.
   ([#51](https://github.com/zcsizmadia/PyDotNet/pull/51))
+- **`decimal` no longer loses precision.** It was converted through `double`, which damages
+  the one .NET numeric type chosen specifically because binary floating point would — `0.1m`
+  did not survive a round trip. It now maps to Python's `decimal.Decimal` through the exact
+  string form. ([#65](https://github.com/zcsizmadia/PyDotNet/issues/65))
 - **`sys.path` entries are no longer duplicated across Initialize/Shutdown cycles.**
   `Shutdown` leaves CPython initialized, so re-initializing re-applied the same paths; after
   N cycles the list held N copies and every failed import walked all of them.
