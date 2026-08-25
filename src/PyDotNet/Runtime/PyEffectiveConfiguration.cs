@@ -46,6 +46,23 @@ public sealed class PyEffectiveConfiguration
     public string? VirtualEnvironmentPath { get; init; }
 
     /// <summary>
+    /// The entries the caller asked to be added to <c>sys.path</c>. Empty when none were.
+    /// <para>
+    /// Recorded because, together with <see cref="SysPathPlacement"/>, this is the option
+    /// most able to make imports resolve somewhere unexpected — a prepended entry can
+    /// shadow an installed package or a standard library module, and nothing else in this
+    /// record would distinguish such an interpreter from an ordinary one.
+    /// </para>
+    /// </summary>
+    public required IReadOnlyList<string> AdditionalSysPaths { get; init; }
+
+    /// <summary>
+    /// Where <see cref="AdditionalSysPaths"/> were placed. <c>Prepend</c> means those
+    /// entries take precedence over the interpreter's own paths.
+    /// </summary>
+    public required PySysPathPlacement SysPathPlacement { get; init; }
+
+    /// <summary>
     /// Whether the interpreter was started through the <c>PyInitConfig</c> API
     /// (<see href="https://peps.python.org/pep-0741/">PEP 741</see>, Python 3.14+) rather
     /// than the legacy globals. Both produce identical behaviour; this reports which path
@@ -85,6 +102,20 @@ public sealed class PyEffectiveConfiguration
         var api = UsedInitConfig ? "PyInitConfig" : "legacy";
         var gil = IsGilEnabled ? "GIL" : "free-threaded";
 
-        return $"Python {PythonVersion} [{gil}] via {api}; library '{LibraryPath}'; program name {target}";
+        var summary =
+            $"Python {PythonVersion} [{gil}] via {api}; library '{LibraryPath}'; program name {target}";
+
+        // Only mentioned when there is something to mention, so the common case stays
+        // readable — but never omitted when paths were added, since that is precisely the
+        // configuration someone reading this line is trying to explain.
+        if (AdditionalSysPaths.Count > 0)
+        {
+            summary +=
+                $"; {SysPathPlacement.ToString().ToLowerInvariant()}ed {AdditionalSysPaths.Count} " +
+                $"sys.path entr{(AdditionalSysPaths.Count == 1 ? "y" : "ies")} " +
+                $"[{string.Join(", ", AdditionalSysPaths)}]";
+        }
+
+        return summary;
     }
 }

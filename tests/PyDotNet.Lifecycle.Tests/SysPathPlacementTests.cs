@@ -1,3 +1,4 @@
+using PyDotNet.Exceptions;
 using PyDotNet.Native;
 using PyDotNet.Runtime;
 
@@ -83,6 +84,98 @@ public sealed class SysPathPlacementTests
         using var origin = interpreter.Evaluate(
             $"importlib.util.find_spec({Quote(ShadowedModule)}).origin");
         await Assert.That(origin.As<string>()).DoesNotStartWith(directory);
+    }
+
+    /// <summary>
+    /// Shutdown leaves CPython initialized, so a second Initialize re-applies the same
+    /// paths. Adding them unconditionally grew <c>sys.path</c> without bound across
+    /// cycles, and every failed import then walked the duplicates.
+    /// </summary>
+    [Test]
+    public async Task Reinitialize_DoesNotDuplicateEntries()
+    {
+        var directory = RequirePlacementRun();
+        var options = new PyRuntimeOptions
+        {
+            AdditionalSysPaths = [directory],
+            SysPathPlacement = PySysPathPlacement.Prepend,
+        };
+
+        PyRuntime.Initialize(options);
+
+        int CountEntries()
+        {
+            using var interpreter = PyRuntime.CreateInterpreter();
+            interpreter.Execute("import sys");
+            using var count = interpreter.Evaluate($"sys.path.count({Quote(directory)})");
+            return count.As<int>();
+        }
+
+        await Assert.That(CountEntries()).IsEqualTo(1);
+
+        // Three further cycles. Before the fix this left four copies.
+        for (var cycle = 0; cycle < 3; cycle++)
+        {
+            PyRuntime.Shutdown();
+            PyRuntime.Initialize(options);
+        }
+
+        await Assert.That(CountEntries())
+            .IsEqualTo(1)
+            .Because("re-initializing must not re-add a path that is already present");
+    }
+
+    /// <summary>
+    /// A second <c>Initialize</c> asking for different paths must not appear to succeed.
+    /// With <c>Prepend</c> the discard decides which module gets imported, so silence is
+    /// the one unacceptable outcome.
+    /// </summary>
+    [Test]
+    public async Task Reinitialize_WithDifferentPaths_Throws()
+    {
+        var directory = RequirePlacementRun();
+
+        PyRuntime.Initialize(new PyRuntimeOptions { AdditionalSysPaths = [directory] });
+
+        await Assert.That(() => PyRuntime.Initialize(new PyRuntimeOptions
+        {
+            AdditionalSysPaths = [directory],
+            SysPathPlacement = PySysPathPlacement.Prepend,
+        })).Throws<PyRuntimeException>();
+
+        // Asking for exactly what is already applied stays idempotent.
+        await Assert.That(() => PyRuntime.Initialize(new PyRuntimeOptions
+        {
+            AdditionalSysPaths = [directory],
+        })).ThrowsNothing();
+
+        // And a caller that asks for nothing has had nothing discarded.
+        await Assert.That(PyRuntime.Initialize).ThrowsNothing();
+    }
+
+    /// <summary>
+    /// The effective configuration is documented as the first thing to check when imports
+    /// resolve unexpectedly, so it has to record the option most able to cause that.
+    /// </summary>
+    [Test]
+    public async Task EffectiveConfiguration_RecordsSysPathOptions()
+    {
+        var directory = RequirePlacementRun();
+
+        PyRuntime.Initialize(new PyRuntimeOptions
+        {
+            AdditionalSysPaths = [directory],
+            SysPathPlacement = PySysPathPlacement.Prepend,
+        });
+
+        var configuration = PyRuntime.EffectiveConfiguration;
+        await Assert.That(configuration).IsNotNull();
+        await Assert.That(configuration!.SysPathPlacement).IsEqualTo(PySysPathPlacement.Prepend);
+        await Assert.That(configuration.AdditionalSysPaths).Contains(directory);
+
+        // A support engineer reads ToString(), not the properties.
+        await Assert.That(configuration.ToString()).Contains(directory);
+        await Assert.That(configuration.ToString()).Contains("prepend");
     }
 
     /// <summary>

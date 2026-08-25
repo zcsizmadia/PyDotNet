@@ -147,6 +147,21 @@ public sealed class PyRuntimeOptions
         VirtualEnvironmentPath is not null;
 
     /// <summary>
+    /// Gets a value indicating whether the caller asked for anything to be added to
+    /// <c>sys.path</c>.
+    /// <para>
+    /// Kept separate from <see cref="HasInterpreterConfiguration"/> because these options
+    /// are not pre-initialization settings: <c>sys.path</c> is mutable, so they are honoured
+    /// even when another component initialized CPython first. They still take part in the
+    /// signature below, since silently dropping them on a repeat <c>Initialize</c> would
+    /// change which module gets imported.
+    /// </para>
+    /// </summary>
+    internal bool HasSysPathConfiguration =>
+        AdditionalSysPaths.Count > 0 ||
+        SysPathPlacement != PySysPathPlacement.Append;
+
+    /// <summary>
     /// Gets the program name to hand to CPython: <see cref="ProgramName"/> when set,
     /// otherwise the interpreter derived from <see cref="VirtualEnvironmentPath"/>.
     /// Returns <see langword="null"/> when neither is configured.
@@ -165,7 +180,13 @@ public sealed class PyRuntimeOptions
             PythonHome is null ? "-" : Path.GetFullPath(PythonHome),
             Isolation is null
                 ? "-"
-                : $"{Isolation.Isolated},{Isolation.UseEnvironment?.ToString() ?? "-"},{Isolation.UserSiteDirectory?.ToString() ?? "-"}");
+                : $"{Isolation.Isolated},{Isolation.UseEnvironment?.ToString() ?? "-"},{Isolation.UserSiteDirectory?.ToString() ?? "-"}",
+            // The sys.path options are part of the signature so that a repeat Initialize
+            // asking for different paths is rejected rather than silently ignored. With
+            // Prepend that discard decides which module gets imported, which is exactly
+            // the kind of failure that is hard to trace back to its cause.
+            SysPathPlacement.ToString(),
+            AdditionalSysPaths.Count == 0 ? "-" : string.Join(';', AdditionalSysPaths));
     }
 
     internal string? ResolveProgramName()
