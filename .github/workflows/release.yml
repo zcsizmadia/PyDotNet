@@ -80,14 +80,38 @@ jobs:
             exit 1
           fi
 
-          # Path to the specific nupkg we want
-          TARGET_NUPKGS="PyDotNet PyDotNet.NumPy PyDotNet.DataFrames PyDotNet.Torch PyDotNet.Matplotlib"
+          # The package list is derived from src/, the same source the pack step in
+          # build.yml uses, rather than written out here. A hardcoded list has to be
+          # remembered when a plugin is added — PyDotNet.LangChain is already announced as
+          # planned — and forgetting it means the new package silently never ships.
+          TARGET_NUPKGS=$(
+            for proj in src/*/; do
+              basename "$proj"
+            done | sort | tr '\n' ' '
+          )
 
-          # Verify .nupkg exists for every package
+          if [[ -z "${TARGET_NUPKGS// }" ]]; then
+            echo "::error::No packable projects found under src/."
+            exit 1
+          fi
+
+          echo "Packages to publish: $TARGET_NUPKGS"
+
+          # Every project under src/ must have produced a package for this version. A
+          # missing one means the build packed a different set than the repository holds.
           for NUPKG in $TARGET_NUPKGS; do
             NUPKG_FILE="./nupkgs/$NUPKG.$TAG_VERSION.nupkg"
             if [[ ! -f "$NUPKG_FILE" ]]; then
               echo "::error::Could not find $NUPKG_FILE in downloaded artifacts"
+              exit 1
+            fi
+          done
+
+          # And nothing may be published that src/ does not account for.
+          for FILE in ./nupkgs/*.nupkg; do
+            NAME=$(basename "$FILE" ".$TAG_VERSION.nupkg")
+            if [[ " $TARGET_NUPKGS " != *" $NAME "* ]]; then
+              echo "::error::Artifact contains $NAME, which is not a project under src/."
               exit 1
             fi
           done

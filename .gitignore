@@ -495,3 +495,6 @@ $RECYCLE.BIN/
 # and the rendered site is published to GitHub Pages by the docs workflow.
 docfx/_site/
 docfx/api/
+
+# Test results, including the coverage reports CI collects.
+TestResults/

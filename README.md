@@ -1427,8 +1427,12 @@ dotnet format
 | Linux (Ubuntu) | arm64 | 3.11, 3.12, 3.13, 3.14 | Tested in CI |
 | macOS | Apple Silicon | 3.11, 3.12, 3.13, 3.14 | Tested in CI |
 | Linux (Ubuntu) | x64 | 3.15 (release candidate) | Informational job — see below |
+| Linux (Ubuntu) | x64 | 3.14 free-threaded | Informational job |
+| Windows | arm64 | 3.13 | Informational job |
 
 Intel macOS is not covered by CI. PyTorch no longer publishes macOS x86_64 wheels, so `PyDotNet.Torch` cannot be exercised there; the core library is expected to work but is untested on that platform.
+
+Windows arm64 runs as an informational job rather than a full matrix leg, for the same reason: `pyarrow` and `torch` publish no `win_arm64` wheels, so those plugin tests cannot run there. `numpy`, `pandas` and `matplotlib` do, so the gap may close on its own. The job covers what actually differs between platforms — locating and loading `libpython`, and configuring the interpreter.
 
 Python 3.15 runs as a separate job that cannot fail the build. Most third-party wheels do not exist for it yet — `pyarrow`, `matplotlib` and `torch` are all absent at 3.15.0rc1 — so only the interpreter lifecycle suite runs there, covering initialization, virtual environment activation, and isolation. It moves into the matrix once 3.15 is final and the wheels have caught up.
 
