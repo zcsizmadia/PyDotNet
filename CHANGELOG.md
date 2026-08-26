@@ -54,6 +54,15 @@ previously published version, and the build fails on an unintended breaking API 
   both routes and their trade-offs stated and the choice left open.
   ([#95](https://github.com/zcsizmadia/PyDotNet/issues/95))
 
+### Internal
+
+- **Package validation now compares against 1.2.0**, the version actually published, rather
+  than 1.1.0. `PyDotNet.Extensions.Hosting` had validation disabled because a package that
+  has never shipped has no baseline to compare against; now that it has one, the opt-out is
+  gone and it is checked like the other five.
+- `PyDotNet.Torch` shows its own guide on NuGet rather than the repository README, matching
+  the other three plugin packages.
+
 ## [1.2.0] — 2026-08-25
 
 ### Added

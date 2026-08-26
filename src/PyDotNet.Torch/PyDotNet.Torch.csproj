@@ -9,7 +9,14 @@
     <PackageTags>python;pytorch;torch;interop;dotnet;zero-copy;dlpack;tensor;autograd</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <IsPackable>true</IsPackable>
+    <PackageReadmeFile>torch.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)../../docs/torch.md"
+          Pack="true" PackagePath="/"
+          Condition="Exists('$(MSBuildThisFileDirectory)../../docs/torch.md')" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../PyDotNet/PyDotNet.csproj" />
