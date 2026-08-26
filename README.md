@@ -512,8 +512,16 @@ An exception thrown inside the delegate becomes a Python exception; one that ori
 from Python is raised again as the type it was, so a round trip does not degrade it. The
 delegate runs with the GIL held, so it can use PyDotNet directly.
 
-Delegates returning `Task` or `ValueTask` are rejected: awaiting a .NET task from Python is
-not supported yet.
+A delegate returning `Task` or `ValueTask` becomes an awaitable, and `await` suspends the
+calling coroutine rather than blocking it, so callbacks driven by `asyncio.gather` overlap:
+
+```csharp
+using var fetch = PyObject.FromDelegate(new Func<string, Task<string>>(FetchAsync));
+```
+
+```python
+results = await asyncio.gather(*(fetch(u) for u in urls))
+```
 
 See [Callbacks](docs/callbacks.md) for the argument rules, the exception mapping, and the
 GIL implications.
@@ -1784,7 +1792,7 @@ Independent of the items above, and each small enough to land on its own:
 |---|---|
 | **Python 3.15 in the enforced matrix** | 3.15 is verified and runs as an informational job. Promoting it waits on third-party wheels — `pyarrow`, `matplotlib` and `torch` have none yet. Tracked in [#43](https://github.com/zcsizmadia/PyDotNet/issues/43) |
 | **Interpreter restart** | `Py_Finalize` is deliberately never called, so a process gets one interpreter configuration for its lifetime. Investigated in [#61](https://github.com/zcsizmadia/PyDotNet/issues/61): finalizing is viable on current CPython, but a C extension cannot be re-imported afterwards (`cannot load module more than once per process`), so a general restart would fail on the first real workload |
-| **Async callbacks** | A delegate returning `Task` or `ValueTask` is rejected: awaiting a .NET task from Python needs the asyncio bridge to drive it. Tracked in [#92](https://github.com/zcsizmadia/PyDotNet/issues/92); see [Callbacks](docs/callbacks.md) |
+| **Cancelling an async callback from Python** | Cancelling the future stops the `await`, but the .NET task runs on with its result discarded. Propagating cancellation into a `CancellationToken` parameter is tracked in [#98](https://github.com/zcsizmadia/PyDotNet/issues/98) |
 | **DataFrame reshaping** | apply/map, pivot, window and rolling functions, and multi-index operations remain unwrapped |
 
 Recently completed and no longer listed above: [callbacks](docs/callbacks.md) — .NET

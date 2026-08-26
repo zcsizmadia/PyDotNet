@@ -500,9 +500,10 @@ public class PyObject : IDisposable
     /// through .NET preserves it.
     /// </para>
     /// <para>
-    /// The delegate runs with the GIL held, as any Python callable does. Delegates
-    /// returning <see cref="Task"/> or <see cref="ValueTask"/> are rejected: awaiting them
-    /// from Python is not supported yet.
+    /// A synchronous delegate runs with the GIL held, as any Python callable does. One
+    /// returning <see cref="Task"/> or <see cref="ValueTask"/> becomes an awaitable
+    /// instead: <c>await</c> suspends the calling coroutine rather than blocking it, and
+    /// such a callback must be called from somewhere its result can be awaited.
     /// </para>
     /// </remarks>
     /// <exception cref="PyInteropException">
