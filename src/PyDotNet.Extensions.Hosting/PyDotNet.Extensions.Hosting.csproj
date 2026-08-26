@@ -12,14 +12,6 @@
     <PackageReadmeFile>hosting.md</PackageReadmeFile>
   </PropertyGroup>
 
-  <!-- No baseline exists for a package that has never shipped, so validation has nothing
-       to compare against and would fail the build looking for it. Remove this once the
-       first version is published; from then on the repository-wide baseline applies and
-       breaking changes are caught like everywhere else. -->
-  <PropertyGroup>
-    <EnablePackageValidation>false</EnablePackageValidation>
-  </PropertyGroup>
-
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)../../docs/hosting.md"
           Pack="true" PackagePath="/"
