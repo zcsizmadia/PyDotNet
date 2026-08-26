@@ -1668,28 +1668,49 @@ Items below are planned or under active investigation. Rough priority order — 
 
 ### Zero-copy DataFrame interop
 
-A first-class bridge for columnar data between .NET and Python without any intermediate copies:
+Half of this already works. `DataFrame.ToArrowBatches()` exports through `__arrow_c_stream__`, and
+`RecordBatch.GetColumn<T>` returns a `ReadOnlySpan<T>` pointing straight into Python-owned memory,
+so Python → .NET columnar reads are zero-copy today. What is missing is the other direction, and a
+typed surface for the Arrow type most Python code actually passes around:
 
 - `PyArrowTable` wrapping `pyarrow.Table` with zero-copy column access via the C Data Interface
-- Bidirectional Pandas `DataFrame` ↔ `RecordBatch` exchange
+- **Import** — expose .NET columnar data through `__arrow_c_stream__` so pandas, polars and
+  `pyarrow.Table` can each consume it without a copy. `DLPackTensor.Export` is the ownership model
 - Polars `LazyFrame` sink / source so .NET can push and pull data from a Polars pipeline
-- Apache Arrow Flight RPC support for large distributed transfers
+- Apache Arrow Flight RPC for large distributed transfers — a network transport with its own
+  dependency and security surface, sharing no design with in-process exchange, so it is a separate
+  decision rather than part of the same piece of work
 
-### Parallel execution with sub-interpreters
+Tracked in [#94](https://github.com/zcsizmadia/PyDotNet/issues/94).
 
-Today PyDotNet hosts one CPython interpreter, so Python work from many .NET threads
-serialises behind a single GIL. [PEP 684](https://peps.python.org/pep-0684/) (Python 3.12+)
-gives each sub-interpreter its own GIL, which is what would make Python genuinely parallel
-from .NET:
+### Parallel execution
+
+Today PyDotNet hosts one CPython interpreter with the GIL enabled by default, so Python work from
+many .NET threads serialises. There are two routes out, and which one PyDotNet should build toward
+is genuinely open.
+
+**Free-threading** ([PEP 703](https://peps.python.org/pep-0703/)) removes the GIL from the
+interpreter itself. PyDotNet already runs the free-threaded 3.14t build in CI and
+`PyRuntime.IsGilEnabled` already reports which kind of interpreter was loaded, so this route needs
+**no API change at all** — existing code becomes parallel by running against a free-threaded
+interpreter.
+
+**Sub-interpreters** ([PEP 684](https://peps.python.org/pep-0684/), Python 3.12+) give each
+interpreter its own GIL. This route needs real API design:
 
 - `Py_NewInterpreterFromConfig` with `PyInterpreterConfig_OWN_GIL`, one per pooled interpreter
 - `InterpreterPoolSize` given the meaning its name already implies — it currently has none
 - Rules for object lifetime, since a `PyObject` belongs to the interpreter that created it
 - Async bridge behaviour when each interpreter runs its own event loop
 
-The practical constraint is extension support: a C extension must opt in to multi-phase
-initialisation to load in a sub-interpreter, and many of the ones PyDotNet's users care
-about do not yet. Establishing what actually loads comes before designing the API.
+Free-threading is the cheaper route and the one already exercised here, but it is not
+automatically the answer: sub-interpreters provide isolation that free-threading does not, which
+matters for a host running untrusted or mutually distrustful Python.
+
+Both are constrained by extensions. A C extension must opt in to multi-phase initialisation to
+load in a sub-interpreter, and must be built free-threaded to load without the GIL; neither is
+universal yet, though free-threaded wheels are appearing faster. Establishing what actually loads
+comes before committing to either.
 
 ### Advanced async patterns
 
@@ -1706,27 +1727,39 @@ Make PyDotNet usable in NativeAOT-published apps:
 - Trim analysis annotations so the linker can safely remove unused converter paths
 - Verified publish profiles for `win-x64`, `linux-x64`, `linux-arm64`
 
+That surface grew in v1.2.0 rather than shrinking: the callback trampoline uses
+`Delegate.DynamicInvoke`, and typed-collection marshaling uses
+`Activator.CreateInstance(typeof(List<>).MakeGenericType(…))`. Collapsing the invoke path into one
+replaceable seam ([#93](https://github.com/zcsizmadia/PyDotNet/issues/93)) is the first step, and
+pays for itself in call throughput whether or not AOT follows.
+
 > **Note:** CPython itself is not AOT-compatible; this item is about making the *host side* (PyDotNet) AOT-safe so it can load and call `libpython` from a trimmed binary.
 
 ### Typed package plugins
 
-Strongly-typed, discoverable C# APIs for the most popular Python packages — generated from Python type stubs (`.pyi`) at design time:
+Most of the hand-written half of this has shipped. `NdArray`, `DataFrame`, `Series` and
+`PyTorchTensor` are the typed wrappers the table below originally proposed under other names, and
+their coverage is summarised in [Python API coverage](#python-api-coverage) above.
 
-| Package | Goal |
-|---------|------|
-| **NumPy** | `PyArray<T>` with LINQ-style operators, `ndarray` shape/dtype awareness |
-| **Pandas** | `PyDataFrame`, `PySeries` with column indexer and iterator |
-| **Polars** | `PyLazyFrame`, push/pull from `LazyFrame` plans |
-| **scikit-learn** | `PyEstimator<TInput, TOutput>` fit/predict/transform wrapper |
-| **PyTorch** | `PyTensor<T>` with grad tracking, device movement, and DLPack export |
+| Package | Status |
+|---------|--------|
+| **NumPy** | `NdArray` — shape/dtype awareness, operators, zero-copy via DLPack |
+| **Pandas** | `DataFrame`, `Series` — column indexer, transformation verbs, Arrow export |
+| **Polars** | `DataFrame`, `Series` — same surface; `LazyFrame` plans remain unwrapped ([#94](https://github.com/zcsizmadia/PyDotNet/issues/94)) |
+| **PyTorch** | `PyTorchTensor` — grad tracking, device movement, DLPack export |
+| **scikit-learn** | Not started — `PyEstimator<TInput, TOutput>` fit/predict/transform |
 
-Long-term, a **source generator** will generate these wrappers automatically from any `.pyi` stub file, so users can create typed wrappers for their own packages.
+What remains is the part that does not scale by hand: a **source generator** producing wrappers
+from any `.pyi` stub file, so users can generate typed surfaces for their own packages rather than
+waiting for a plugin.
 
 ### Visualization bridge
 
 Render Python visualization libraries inside .NET UI frameworks without a browser round-trip:
 
-- **Matplotlib** → render to `byte[]` (PNG/SVG) or `System.Drawing.Bitmap` from any thread
+- **Matplotlib** → rendering to `byte[]` already ships (`Figure.SaveToPng`, `SaveToSvg`,
+  `SaveToPdf`, `SaveToBytes`, via the headless Agg backend). What remains is
+  `System.Drawing.Bitmap` conversion
 - **Plotly** → capture the HTML/JSON output and display in a WebView2 / MAUI `WebView`
 - **Streamlit** / **Gradio** → launch in a side-process and embed via iframe in Blazor
 - An `IPlotRenderer` abstraction so WPF, WinForms, MAUI, and Avalonia apps share the same API
@@ -1737,7 +1770,9 @@ Building on the existing DLPack and `__cuda_array_interface__` support:
 
 - **CUDA stream synchronization** — associate .NET async operations with CUDA streams so compute and I/O can overlap
 - **Device memory access** — read/write `cuMemAlloc` buffers from .NET without a device→host copy
-- **Multi-GPU routing** — inspect device ordinals from DLPack metadata and fan work out across GPUs
+- **Multi-GPU routing** — fan work out across GPUs. Reading the device is already possible:
+  `DLPackTensor.GetDevice` returns the device type and ordinal, and `ArrayInterfaceInfo.IsCuda`
+  reports whether a buffer lives on the device
 - **NVIDIA cuSPARSE / cuBLAS wrappers** — call into Python math libraries with pre-staged GPU tensors
 - **Unified memory (`cudaMallocManaged`)** — share a single allocation across .NET, Python, and CUDA kernels
 
@@ -1749,7 +1784,7 @@ Independent of the items above, and each small enough to land on its own:
 |---|---|
 | **Python 3.15 in the enforced matrix** | 3.15 is verified and runs as an informational job. Promoting it waits on third-party wheels — `pyarrow`, `matplotlib` and `torch` have none yet. Tracked in [#43](https://github.com/zcsizmadia/PyDotNet/issues/43) |
 | **Interpreter restart** | `Py_Finalize` is deliberately never called, so a process gets one interpreter configuration for its lifetime. Investigated in [#61](https://github.com/zcsizmadia/PyDotNet/issues/61): finalizing is viable on current CPython, but a C extension cannot be re-imported afterwards (`cannot load module more than once per process`), so a general restart would fail on the first real workload |
-| **Async callbacks** | A delegate returning `Task` or `ValueTask` is rejected: awaiting a .NET task from Python needs the asyncio bridge to drive it. See [Callbacks](docs/callbacks.md) |
+| **Async callbacks** | A delegate returning `Task` or `ValueTask` is rejected: awaiting a .NET task from Python needs the asyncio bridge to drive it. Tracked in [#92](https://github.com/zcsizmadia/PyDotNet/issues/92); see [Callbacks](docs/callbacks.md) |
 | **DataFrame reshaping** | apply/map, pivot, window and rolling functions, and multi-index operations remain unwrapped |
 
 Recently completed and no longer listed above: [callbacks](docs/callbacks.md) — .NET
