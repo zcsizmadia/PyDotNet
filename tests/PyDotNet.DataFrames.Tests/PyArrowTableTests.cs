@@ -193,7 +193,19 @@ public sealed class PyArrowTableTests
         }
         finally
         {
-            File.Delete(path);
+            // Best effort. pyarrow can still hold the file open when the read is served
+            // from a memory map, and disposing the wrapper only drops a reference —
+            // CPython decides when the object is actually finalised. Deleting a file with
+            // a live handle fails on Windows and succeeds on POSIX, which is why this only
+            // ever broke the Windows leg. The round trip is what the test is about; a
+            // leftover file in the temp directory is not a failure.
+            try
+            {
+                File.Delete(path);
+            }
+            catch (IOException)
+            {
+            }
         }
     }
 
@@ -217,7 +229,19 @@ public sealed class PyArrowTableTests
         }
         finally
         {
-            File.Delete(path);
+            // Best effort. pyarrow can still hold the file open when the read is served
+            // from a memory map, and disposing the wrapper only drops a reference —
+            // CPython decides when the object is actually finalised. Deleting a file with
+            // a live handle fails on Windows and succeeds on POSIX, which is why this only
+            // ever broke the Windows leg. The round trip is what the test is about; a
+            // leftover file in the temp directory is not a failure.
+            try
+            {
+                File.Delete(path);
+            }
+            catch (IOException)
+            {
+            }
         }
     }
 
