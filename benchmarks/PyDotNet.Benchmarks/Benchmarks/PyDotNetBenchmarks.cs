@@ -33,6 +33,10 @@ public class PyDotNetBenchmarks
     private PyFunction _noArgsFn = null!;
     private PyFunction _manyArgsFn = null!;
     private PyObject _byteArray64K = null!;
+    private PyModule _builtins = null!;
+    private PyObject _lengthKey = null!;
+    private List<object?> _words = null!;
+    private Func<string, int> _lengthDelegate = null!;
 
     private static readonly string LongString = new('a', 1_000);
     private static readonly object?[] IntList32 = Enumerable.Range(0, 32).Cast<object?>().ToArray();
@@ -66,6 +70,16 @@ public class PyDotNetBenchmarks
 
         _mainModule      = _interp.ImportModule("__main__");
         _mathModule      = _interp.ImportModule("math");
+        _builtins        = _interp.ImportModule("builtins");
+
+        // A .NET delegate exposed as a Python callable. sorted() invokes it once per
+        // comparison, so this measures the per-invocation cost of the callback path
+        // rather than the one-off cost of creating the callable.
+        _lengthDelegate = static s => s.Length;
+        _lengthKey = PyObject.FromDelegate(_lengthDelegate);
+        _words = Enumerable.Range(0, 512)
+            .Select(static i => (object?)new string('a', (i * 37 % 64) + 1))
+            .ToList();
         _identityFn      = _mainModule.GetFunction("identity");
         _addFn           = _mainModule.GetFunction("add");
         _sqrtFn          = _mathModule.GetFunction("sqrt");
@@ -204,5 +218,28 @@ public class PyDotNetBenchmarks
     public async Task<int> Async_Identity()
     {
         return await _asyncIdentityFn.CallAsync<int>(42);
+    }
+
+    // ── Callbacks  (.NET delegate invoked from Python) ───────────────────────
+
+    [Benchmark(Description = "sorted(512 strings, key=<.NET Func<string,int>>)  ~4600 callback invocations")]
+    [BenchmarkCategory("Callback")]
+    public int Callback_SortedKey()
+    {
+        using var result = _builtins.Call(
+            "sorted",
+            [_words],
+            new Dictionary<string, object?> { ["key"] = _lengthKey });
+
+        return result.As<string[]>().Length;
+    }
+
+    // Reuses the delegate from setup so this measures FromDelegate itself, not the
+    // allocation of a closure alongside it.
+    [Benchmark(Description = "PyObject.FromDelegate(...)  — callable creation, not invocation")]
+    [BenchmarkCategory("Callback")]
+    public void Callback_Create()
+    {
+        using var callable = PyObject.FromDelegate(_lengthDelegate);
     }
 }

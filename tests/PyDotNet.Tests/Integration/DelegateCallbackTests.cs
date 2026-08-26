@@ -446,6 +446,55 @@ public sealed class DelegateCallbackTests
         await Assert.That(final.As<int>()).IsEqualTo(3);
     }
 
+    [Test]
+    public async Task SameDelegateType_DifferentTargets_StayIndependent()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        interp.Execute("""
+            def dcb_pair(first, second, value):
+                return [first(value), second(value)]
+            """);
+
+        using var module = interp.ImportModule("__main__");
+
+        // The compiled invoker is cached per delegate *type*, so these two closures share
+        // one. It takes the target as an argument rather than capturing it — this is the
+        // test that says so, because a capturing invoker would give both callables
+        // whichever closure happened to be compiled first.
+        using var addTen = PyObject.FromDelegate(new Func<int, int>(x => x + 10));
+        using var addHundred = PyObject.FromDelegate(new Func<int, int>(x => x + 100));
+
+        using var result = module.Call("dcb_pair", addTen, addHundred, 1);
+
+        await Assert.That(result.ToString()).IsEqualTo("[11, 101]");
+    }
+
+    [Test]
+    public async Task DelegateTypesWithDifferentSignatures_EachGetTheirOwnInvoker()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        interp.Execute("""
+            def dcb_shapes(nullary, unary, binary):
+                return [nullary(), unary(2), binary(2, 3)]
+            """);
+
+        using var module = interp.ImportModule("__main__");
+
+        // Arity and parameter types are baked into each compiled invoker, so the cache has
+        // to key on the delegate type rather than on anything coarser.
+        using var nullary = PyObject.FromDelegate(new Func<int>(() => 1));
+        using var unary = PyObject.FromDelegate(new Func<int, int>(x => x * 10));
+        using var binary = PyObject.FromDelegate(new Func<int, int, string>((a, b) => $"{a}:{b}"));
+
+        using var result = module.Call("dcb_shapes", nullary, unary, binary);
+
+        await Assert.That(result.ToString()).IsEqualTo("[1, 20, '2:3']");
+    }
+
     private static T Catch<T>(Action action)
         where T : Exception
     {
