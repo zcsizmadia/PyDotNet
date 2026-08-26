@@ -118,12 +118,53 @@ releasing it would be wrong here: `sorted(key=...)` is midway through a list whe
 back, and a callback that observed a half-mutated interpreter would be worse than a slow
 one. Keep callbacks short, or hand the work to a `Task` the caller awaits outside Python.
 
-## Limitations
+## Asynchronous callbacks
 
-**No asynchronous callbacks yet.** A delegate returning `Task`, `Task<T>`, `ValueTask` or
-`ValueTask<T>` is rejected at creation with an explanation, rather than failing later with
-a marshaling error that says nothing about the real limitation. Awaiting a .NET task from
-Python needs the asyncio bridge to drive it.
+A delegate returning `Task`, `Task<T>`, `ValueTask` or `ValueTask<T>` becomes an awaitable:
+
+```csharp
+using var fetch = PyObject.FromDelegate(new Func<string, Task<string>>(async url =>
+{
+    using var response = await http.GetAsync(url);
+    return await response.Content.ReadAsStringAsync();
+}));
+```
+
+```python
+async def collect(urls, fetch):
+    return await asyncio.gather(*(fetch(u) for u in urls))
+```
+
+`await` **suspends the calling coroutine rather than blocking it**, so the three fetches
+above overlap. That is the whole point: a callback that blocked the event loop while .NET
+work ran would stall every other coroutine on it.
+
+A `Task` or `ValueTask` with no result completes the await with `None`.
+
+### What it needs from the caller
+
+The future is created on the loop the caller is running on, so an async callback has to be
+called from somewhere its result can be awaited. Calling one outside a coroutine raises
+`RuntimeError` naming the reason, rather than asyncio's bare "no running event loop".
+
+### Failure
+
+A faulted task raises on the Python side through the same
+[mapping](#exceptions) the synchronous path uses. The `AggregateException` a faulted `Task`
+carries is unwrapped first, so what Python sees is the exception the delegate actually
+threw. A cancelled task raises too rather than leaving the await pending forever.
+
+Throwing *before* returning a task — argument validation, say — fails the call
+synchronously instead, because at that point there is no future to complete.
+
+### Not yet: cancelling from Python
+
+Cancelling the future on the Python side stops the `await`, but does not cancel the .NET
+task, which runs to completion with its result discarded. Propagating cancellation into a
+`CancellationToken` parameter is tracked separately in
+[#98](https://github.com/zcsizmadia/PyDotNet/issues/98).
+
+## Limitations
 
 **No by-reference parameters.** `out` and `ref` have no Python equivalent — there is
 nothing for the caller to write back into — so a delegate using them is rejected, naming

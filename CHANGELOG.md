@@ -7,6 +7,39 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Sinc
 that is checked rather than asserted: every packable project is validated against the
 previously published version, and the build fails on an unintended breaking API change.
 
+## [Unreleased]
+
+### Added
+
+- **Asynchronous callbacks.** A delegate returning `Task`, `Task<T>`, `ValueTask` or
+  `ValueTask<T>` is now awaitable from Python instead of being rejected at creation.
+  `await` suspends the calling coroutine rather than blocking it, so callbacks driven by
+  `asyncio.gather` genuinely overlap — three 150 ms calls complete in 158 ms in the
+  sample. The future is created on the caller's running loop rather than the async
+  bridge's, because completing a future that belongs to one loop from another is
+  undefined. A faulted task raises on the Python side through the same mapping the
+  synchronous path uses, with the `AggregateException` unwrapped first; a cancelled task
+  raises rather than leaving the await pending.
+  ([#92](https://github.com/zcsizmadia/PyDotNet/issues/92))
+
+### Changed
+
+- **The callback invoke path is compiled rather than reflective.** `Delegate.DynamicInvoke`
+  is replaced by one compiled invoker per delegate type, which matters because this is a
+  per-element path: `sorted(key=…)` invokes the callback once per comparison. Measured end
+  to end on `sorted()` over 512 strings, the median call went from 0.312 ms to 0.216 ms
+  with no overlap between the two sets of readings.
+  ([#93](https://github.com/zcsizmadia/PyDotNet/issues/93))
+
+### Documentation
+
+- The roadmap described four things that had already shipped — Matplotlib rendering to
+  `byte[]`, four of the five typed plugin wrappers, the Arrow export path, and DLPack
+  device inspection — and framed parallel execution as though sub-interpreters were the
+  only route, omitting the free-threaded build PyDotNet already runs in CI. Corrected, with
+  both routes and their trade-offs stated and the choice left open.
+  ([#95](https://github.com/zcsizmadia/PyDotNet/issues/95))
+
 ## [1.2.0] — 2026-08-25
 
 ### Added

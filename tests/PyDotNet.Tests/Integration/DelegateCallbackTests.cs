@@ -369,18 +369,17 @@ public sealed class DelegateCallbackTests
     }
 
     [Test]
-    public async Task AsyncDelegate_IsRejectedWithAnExplanation()
+    public async Task AsyncDelegate_IsAccepted()
     {
         await PythonEnvironment.SkipIfUnavailableAsync();
 
         using var interp = PyRuntime.CreateInterpreter();
 
-        // Converting the Task itself would fail later with a marshaling error that says
-        // nothing about the real limitation.
-        var ex = Catch<PyInteropException>(
-            () => PyObject.FromDelegate(new Func<Task<int>>(() => Task.FromResult(1))));
+        // This used to be rejected at creation. What awaiting one actually does is covered
+        // by AsyncCallbackTests; here it is only that creating one no longer throws.
+        using var callable = PyObject.FromDelegate(new Func<Task<int>>(() => Task.FromResult(1)));
 
-        await Assert.That(ex.Message).Contains("Asynchronous callbacks are not supported");
+        await Assert.That(callable).IsNotNull();
     }
 
     [Test]

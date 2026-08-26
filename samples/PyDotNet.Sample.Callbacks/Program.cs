@@ -131,4 +131,39 @@ using var rejected = module.Call("misuse", strict);
 Console.WriteLine($"   {rejected}");
 Console.WriteLine();
 
+// ── 6. Async delegates become awaitables ─────────────────────────────────────
+
+Console.WriteLine("6. A .NET Task awaited from Python");
+
+interp.Execute("""
+    import asyncio, time
+
+    def fan_out(fetch, urls):
+        async def run():
+            started = time.perf_counter()
+            results = await asyncio.gather(*(fetch(u) for u in urls))
+            return results, time.perf_counter() - started
+        return asyncio.run(run())
+    """);
+
+// Each call sleeps 150 ms. Awaiting suspends the calling coroutine rather than
+// blocking it, so gather runs all three at once — serialising them would take 450 ms.
+using var fetch = PyObject.FromDelegate(new Func<string, Task<string>>(async url =>
+{
+    await Task.Delay(150);
+    return $"{url} -> 200";
+}));
+
+using var fanned = module.Call(
+    "fan_out",
+    fetch,
+    new List<object?> { "/a", "/b", "/c" });
+
+using var responses = fanned[0L];
+using var elapsed = fanned[1L];
+
+Console.WriteLine($"   {responses}");
+Console.WriteLine($"   three 150 ms calls took {elapsed.As<double>() * 1000:F0} ms — concurrent, not serial");
+Console.WriteLine();
+
 Console.WriteLine("Done.");

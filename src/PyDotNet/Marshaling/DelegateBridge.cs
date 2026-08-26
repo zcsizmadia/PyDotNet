@@ -67,6 +67,13 @@ internal static unsafe class DelegateBridge
         /// </summary>
         internal required Func<Delegate, object?[], object?> Invoke { get; init; }
 
+        /// <summary>
+        /// Converts what the delegate returned into a <see cref="Task{TResult}"/>, or
+        /// <see langword="null"/> for a synchronous delegate. Set only for one returning
+        /// <see cref="Task"/> or <see cref="ValueTask"/>.
+        /// </summary>
+        internal Func<object?, Task<object?>>? Awaiter { get; init; }
+
         /// <summary>Unmanaged blocks freed when the capsule is collected.</summary>
         internal IntPtr MethodDef { get; set; }
 
@@ -84,6 +91,9 @@ internal static unsafe class DelegateBridge
 
     /// <summary>One compiled invoker per delegate type. See <see cref="GetInvoker"/>.</summary>
     private static readonly ConcurrentDictionary<Type, Func<Delegate, object?[], object?>> _invokers = new();
+
+    /// <summary>One awaiter per asynchronous return type. See <see cref="GetAwaiter"/>.</summary>
+    private static readonly ConcurrentDictionary<Type, Func<object?, Task<object?>>> _awaiters = new();
 
     /// <summary>
     /// Wraps <paramref name="target"/> as a Python callable and returns a new reference.
@@ -111,23 +121,16 @@ internal static unsafe class DelegateBridge
 
         var returnType = method.ReturnType;
 
-        // Awaiting a .NET task from Python needs the asyncio bridge to drive it, which this
-        // does not do. Converting the Task itself would fail later with a marshaling error
-        // that says nothing about the real limitation.
-        if (IsAwaitable(returnType))
-        {
-            throw new PyInteropException(
-                $"Cannot expose delegate '{DescribeTarget(target)}' to Python: it returns " +
-                $"'{returnType.Name}'. Asynchronous callbacks are not supported yet; return a " +
-                "completed value, or drive the work to completion inside the delegate.");
-        }
-
         var context = new CallbackContext
         {
             Target = target,
             Parameters = parameters,
             ReturnsVoid = returnType == typeof(void),
             Invoke = GetInvoker(target.GetType(), parameters, returnType),
+
+            // A delegate returning a task becomes an awaitable on the Python side rather
+            // than a callable returning an opaque object.
+            Awaiter = IsAwaitable(returnType) ? GetAwaiter(returnType) : null,
         };
 
         var handle = GCHandle.Alloc(context);
@@ -200,6 +203,11 @@ internal static unsafe class DelegateBridge
             if (!TryBindArguments(context, args, kwargs, out var values))
             {
                 return IntPtr.Zero;
+            }
+
+            if (context.Awaiter is not null)
+            {
+                return InvokeAsync(context, values);
             }
 
             // Calls the delegate directly rather than through DynamicInvoke, so whatever it
@@ -513,6 +521,319 @@ internal static unsafe class DelegateBridge
         // again on every raise.
         _builtinExceptions[typeName] = resolved;
         return resolved == IntPtr.Zero ? null : resolved;
+    }
+
+    // ── Asynchronous callbacks ────────────────────────────────────────────
+    //
+    // A delegate returning a task becomes an awaitable. The trampoline creates an
+    // asyncio.Future on the loop the caller is running on, starts the .NET work, and hands
+    // the future back immediately — so `await fn()` suspends the calling coroutine rather
+    // than blocking it, which is the whole point of the feature.
+    //
+    // The future belongs to the *caller's* running loop, not to the AsyncBridge host loop.
+    // Those are usually the same, but need not be: Python code may drive a loop of its own,
+    // and completing a future that belongs to one loop from another is undefined.
+    // asyncio.get_running_loop() answers the question correctly by construction.
+
+    private const string AsyncHelperName = "_pydotnet_new_future";
+    private const string AsyncSettleName = "_pydotnet_settle_future";
+
+    private const string AsyncHelperSource = """
+        import asyncio as _pydotnet_cb_asyncio
+
+        def _pydotnet_new_future():
+            try:
+                loop = _pydotnet_cb_asyncio.get_running_loop()
+            except RuntimeError:
+                raise RuntimeError(
+                    "This callback returns a .NET Task, so it can only be called where its "
+                    "result can be awaited. Call it from a coroutine."
+                ) from None
+            return loop.create_future()
+
+        def _pydotnet_settle_future(future, ok, value):
+            # Called from a .NET thread, so everything touching the future is handed to the
+            # loop that owns it. A future Python has already cancelled is left alone —
+            # set_result on one raises InvalidStateError.
+            def _apply():
+                if future.cancelled():
+                    return
+                if ok:
+                    future.set_result(value)
+                else:
+                    future.set_exception(value)
+
+            future.get_loop().call_soon_threadsafe(_apply)
+        """;
+
+    /// <summary>
+    /// Starts an asynchronous delegate and returns a new reference to the
+    /// <c>asyncio.Future</c> Python will await. The caller holds the GIL.
+    /// </summary>
+    private static IntPtr InvokeAsync(CallbackContext context, object?[] values)
+    {
+        var future = CallAsyncHelper(AsyncHelperName);
+        if (future == IntPtr.Zero)
+        {
+            // The helper raised — no running loop, most likely, and its message says so.
+            return IntPtr.Zero;
+        }
+
+        Task<object?> task;
+        try
+        {
+            // The delegate may throw before it ever returns a task. That failure is the
+            // caller's, synchronously, rather than something to complete the future with.
+            task = context.Awaiter!(context.Invoke(context.Target, values));
+        }
+        catch (Exception ex)
+        {
+            NativeMethods.Py_DecRef(future);
+            SetErrorFrom(ex);
+            return IntPtr.Zero;
+        }
+
+        // One reference for Python, one for the continuation: it runs on a thread pool
+        // thread that has to re-acquire the GIL, so it cannot borrow the caller's.
+        NativeMethods.Py_IncRef(future);
+
+        _ = task.ContinueWith(
+            static (completed, state) => SettleFuture((IntPtr)state!, completed),
+            future,
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+
+        return future;
+    }
+
+    /// <summary>
+    /// Completes the Python future from the finished task. Runs on a .NET thread, and owns
+    /// the reference it is handed.
+    /// </summary>
+    private static void SettleFuture(IntPtr future, Task<object?> completed)
+    {
+        try
+        {
+            using var gil = new GilScope();
+
+            IntPtr payload;
+            bool ok;
+
+            if (completed.IsCompletedSuccessfully)
+            {
+                ok = true;
+                payload = TypeConverter.ToPython(completed.Result);
+            }
+            else
+            {
+                ok = false;
+
+                // A faulted task carries an AggregateException whose wrapper says nothing,
+                // and a cancelled one carries no exception at all.
+                var error = completed.Exception?.InnerException
+                    ?? (Exception?)completed.Exception
+                    ?? new TaskCanceledException();
+
+                payload = CreateError(error);
+            }
+
+            if (payload == IntPtr.Zero)
+            {
+                NativeMethods.PyErr_Clear();
+                return;
+            }
+
+            try
+            {
+                var okObject = NativeMethods.PyBool_FromLong(ok ? 1L : 0L);
+                try
+                {
+                    var settled = CallAsyncHelper(AsyncSettleName, future, okObject, payload);
+                    if (settled == IntPtr.Zero)
+                    {
+                        NativeMethods.PyErr_Clear();
+                    }
+                    else
+                    {
+                        NativeMethods.Py_DecRef(settled);
+                    }
+                }
+                finally
+                {
+                    NativeMethods.Py_DecRef(okObject);
+                }
+            }
+            finally
+            {
+                NativeMethods.Py_DecRef(payload);
+            }
+        }
+        catch
+        {
+            // Nowhere to report to: this is a continuation with no caller. Leaving the
+            // future pending is bad, but throwing would tear down the thread pool thread.
+        }
+        finally
+        {
+            try
+            {
+                using var gil = new GilScope();
+                NativeMethods.Py_DecRef(future);
+            }
+            catch
+            {
+                // The interpreter is gone; the reference goes with it.
+            }
+        }
+    }
+
+    /// <summary>
+    /// Calls one of the installed asyncio helpers, returning a new reference or
+    /// <see cref="IntPtr.Zero"/> with a Python error set. The caller holds the GIL.
+    /// </summary>
+    private static IntPtr CallAsyncHelper(string name, params IntPtr[] arguments)
+    {
+        var main = NativeMethods.PyImport_AddModule("__main__"); // borrowed
+        if (main == IntPtr.Zero)
+        {
+            return IntPtr.Zero;
+        }
+
+        // Installed on first use rather than at startup: a process that never exposes an
+        // async callback should not have these defined in its __main__.
+        if (NativeMethods.PyObject_HasAttrString(main, AsyncHelperName) == 0)
+        {
+            NativeMethods.PyErr_Clear();
+            if (!PythonCode.TryRunInMainModule(AsyncHelperSource))
+            {
+                return IntPtr.Zero;
+            }
+        }
+
+        var helper = NativeMethods.PyObject_GetAttrString(main, name);
+        if (helper == IntPtr.Zero)
+        {
+            return IntPtr.Zero;
+        }
+
+        try
+        {
+            var args = NativeMethods.PyTuple_New(arguments.Length);
+            if (args == IntPtr.Zero)
+            {
+                return IntPtr.Zero;
+            }
+
+            try
+            {
+                for (var i = 0; i < arguments.Length; i++)
+                {
+                    NativeMethods.Py_IncRef(arguments[i]);
+                    _ = NativeMethods.PyTuple_SetItem(args, i, arguments[i]); // steals
+                }
+
+                return NativeMethods.PyObject_CallObject(helper, args);
+            }
+            finally
+            {
+                NativeMethods.Py_DecRef(args);
+            }
+        }
+        finally
+        {
+            NativeMethods.Py_DecRef(helper);
+        }
+    }
+
+    /// <summary>
+    /// Builds a Python exception instance for a .NET exception, using the same mapping the
+    /// synchronous path raises with. Returns a new reference.
+    /// </summary>
+    /// <remarks>
+    /// The synchronous path sets the error directly; a future needs the exception as an
+    /// object to hand to <c>set_exception</c>, so the mapping is shared but the delivery
+    /// is not.
+    /// </remarks>
+    private static IntPtr CreateError(Exception exception)
+    {
+        var (typeName, message) = exception is PythonException pythonException
+            ? (pythonException.PythonExceptionType, pythonException.Message)
+            : (MapExceptionType(exception), $"{exception.GetType().Name}: {exception.Message}");
+
+        var type = ResolveBuiltinException(typeName) ?? ResolveBuiltinException("RuntimeError");
+        if (type is null)
+        {
+            return IntPtr.Zero;
+        }
+
+        var messageObject = NativeMethods.PyUnicode_FromString(message);
+        if (messageObject == IntPtr.Zero)
+        {
+            return IntPtr.Zero;
+        }
+
+        try
+        {
+            var args = NativeMethods.PyTuple_New(1);
+            if (args == IntPtr.Zero)
+            {
+                return IntPtr.Zero;
+            }
+
+            try
+            {
+                NativeMethods.Py_IncRef(messageObject);
+                _ = NativeMethods.PyTuple_SetItem(args, 0, messageObject); // steals
+
+                return NativeMethods.PyObject_CallObject(type.Value, args);
+            }
+            finally
+            {
+                NativeMethods.Py_DecRef(args);
+            }
+        }
+        finally
+        {
+            NativeMethods.Py_DecRef(messageObject);
+        }
+    }
+
+    /// <summary>
+    /// Returns the converter that turns what an asynchronous delegate returned into a
+    /// <see cref="Task{TResult}"/>, compiling it on first use for that return type.
+    /// </summary>
+    /// <remarks>
+    /// Four shapes reach here — <see cref="Task"/>, <c>Task&lt;T&gt;</c>,
+    /// <see cref="ValueTask"/> and <c>ValueTask&lt;T&gt;</c> — and awaiting each is a
+    /// different expression. Resolving that once per return type keeps it off the call path.
+    /// </remarks>
+    private static Func<object?, Task<object?>> GetAwaiter(Type returnType)
+    {
+        return _awaiters.GetOrAdd(returnType, static type =>
+        {
+            if (type == typeof(Task))
+            {
+                return TaskAdapters.FromTask;
+            }
+
+            if (type == typeof(ValueTask))
+            {
+                return TaskAdapters.FromValueTask;
+            }
+
+            var definition = type.GetGenericTypeDefinition();
+            var resultType = type.GetGenericArguments()[0];
+
+            var method = definition == typeof(Task<>)
+                ? typeof(TaskAdapters).GetMethod(
+                    nameof(TaskAdapters.FromTaskOf), BindingFlags.NonPublic | BindingFlags.Static)!
+                : typeof(TaskAdapters).GetMethod(
+                    nameof(TaskAdapters.FromValueTaskOf), BindingFlags.NonPublic | BindingFlags.Static)!;
+
+            return method.MakeGenericMethod(resultType)
+                .CreateDelegate<Func<object?, Task<object?>>>();
+        });
     }
 
     /// <summary>
