@@ -112,32 +112,47 @@ public sealed class AsyncCallbackTests
 
             def acb_gather(fn):
                 async def run():
-                    # If awaiting the callback blocked the loop, these would serialise and
-                    # the ordering below could not happen.
-                    results = await asyncio.gather(fn(3), fn(1), fn(2))
-                    return results
+                    return await asyncio.gather(fn(1), fn(2), fn(3))
                 return asyncio.run(run())
             """);
 
         using var module = interp.ImportModule("__main__");
 
-        var completionOrder = new System.Collections.Concurrent.ConcurrentQueue<int>();
-        using var callable = PyObject.FromDelegate(new Func<int, Task<int>>(async delayUnits =>
+        // Concurrency is established by construction rather than by timing: no call can
+        // return until all three have started, which is only reachable if the three overlap.
+        // Serialised, the first would wait for siblings that cannot start until it returns.
+        //
+        // An earlier version of this test compared the completion order of staggered
+        // Task.Delay calls, which inverted under CI load — the ordering of timers is not
+        // something a test can rely on, and this needs no clock at all.
+        var started = 0;
+        var allStarted = new TaskCompletionSource();
+
+        using var callable = PyObject.FromDelegate(new Func<int, Task<int>>(async value =>
         {
-            await Task.Delay(delayUnits * 60);
-            completionOrder.Enqueue(delayUnits);
-            return delayUnits;
+            if (Interlocked.Increment(ref started) == 3)
+            {
+                allStarted.TrySetResult();
+            }
+
+            try
+            {
+                // Bounded, so a regression fails with a readable result instead of hanging
+                // the suite. Generous, because the bound is not what is being measured.
+                await allStarted.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            }
+            catch (TimeoutException)
+            {
+                return -1;
+            }
+
+            return value;
         }));
 
         using var result = module.Call("acb_gather", callable);
 
-        // gather preserves argument order in its results regardless of completion order.
-        await Assert.That(result.ToString()).IsEqualTo("[3, 1, 2]");
-
-        // But the shortest delay finished first, which only happens if the three ran
-        // concurrently — that is, if awaiting suspended the coroutine instead of blocking.
-        await Assert.That(completionOrder.TryDequeue(out var first)).IsTrue();
-        await Assert.That(first).IsEqualTo(1);
+        // Each call saw all three running. Serialised, this reads [-1, -1, 3].
+        await Assert.That(result.ToString()).IsEqualTo("[1, 2, 3]");
     }
 
     [Test]
