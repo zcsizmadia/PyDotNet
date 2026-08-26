@@ -122,6 +122,22 @@ PyRuntime.Shutdown();
 | `DataFrame.FromPyObject(obj)` | Wraps an existing `PyObject` as a `DataFrame`. |
 | `DataFrame.IsDataFrame(obj)` | Heuristic check for `columns` + `shape` attributes. |
 
+### `PyArrowModule` / `PyArrowTable`
+
+| Member | Description |
+|---|---|
+| `PyArrowModule.Import(interp)` | Imports `pyarrow`. |
+| `pa.FromColumns(dict)` | Builds a table from named .NET arrays. |
+| `pa.FromDataFrame(frame)` | Converts a pandas or polars frame to a table. |
+| `pa.ReadParquet(path)` / `ReadIpc(path)` | Reads Parquet or Arrow IPC into a table. |
+| `table.RowCount` / `ColumnCount` / `ColumnNames` | Shape and schema. |
+| `table.ColumnTypes` | Arrow type names as pyarrow spells them (`int64`, `timestamp[us]`). |
+| `table.ByteSize` | What the buffers occupy (`Table.nbytes`). |
+| `table.ToArrowBatches()` | Zero-copy `ArrowBatchReader` over the C stream. |
+| `table.ToPandas()` / `ToPolars(interp)` | Converts to either frame library. |
+| `table.WriteParquet(interp, path)` / `WriteIpc(interp, path)` | Write paths. |
+| `PyArrowTable.IsTable(obj)` | Heuristic check for a `pyarrow.Table`. |
+
 ### `Series`
 
 | Member | Description |
@@ -268,6 +284,47 @@ here so the caller writes it once.
 objects on both backends: pandas defaults `to_json` to a column-oriented layout and polars
 writes rows, so the orientation is stated explicitly and the output is readable by something
 that does not know which library wrote it.
+
+## Arrow tables
+
+`pyarrow.Table` is the type Arrow-shaped Python code passes around, and the one pandas and
+polars both convert through. `PyArrowTable` gives .NET somewhere to stand that is neither
+frame library — useful when the data is columnar but the workflow is not a DataFrame
+workflow.
+
+```csharp
+using var pa = PyArrowModule.Import(interp);
+using var table = pa.ReadParquet("events.parquet");
+
+Console.WriteLine($"{table.RowCount} rows, {table.ByteSize / 1024} KiB");
+
+foreach (var batch in table.ToArrowBatches())
+{
+    var ids = batch.GetColumn<long>("id");     // no copy
+    batch.Dispose();
+}
+```
+
+It is also the neutral ground between the two frame libraries:
+
+```csharp
+using var fromPandas = pa.FromDataFrame(pandasFrame);
+using var asPolars = fromPandas.ToPolars(interp);
+```
+
+`FromDataFrame` goes through the Arrow C stream protocol where the frame exposes it —
+pandas 3.0 and polars both do — so the column buffers are shared rather than copied.
+`ToPolars` is likewise a view over the same buffers, because polars shares Arrow's memory
+model; `ToPandas` materialises pandas' own representation for anything that is not already
+a compatible block.
+
+`ColumnTypes` reports what the table declares, in pyarrow's spelling. That is deliberately
+richer than `ColumnDType`, which covers only the subset the zero-copy reader can hand back
+as a typed span.
+
+> Reading is zero-copy in this direction only. Handing .NET-owned columnar data *to* Python
+> without a copy is tracked in
+> [#94](https://github.com/zcsizmadia/PyDotNet/issues/94).
 
 ## Zero-copy usage notes
 
