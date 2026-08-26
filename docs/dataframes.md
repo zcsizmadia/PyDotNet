@@ -129,6 +129,8 @@ PyRuntime.Shutdown();
 | `PyArrowModule.Import(interp)` | Imports `pyarrow`. |
 | `pa.FromColumns(dict)` | Builds a table from named .NET arrays. |
 | `pa.FromDataFrame(frame)` | Converts a pandas or polars frame to a table. |
+| `pa.FromArrowStream(source)` | Builds a table from anything exposing `__arrow_c_stream__`. |
+| `ArrowExport.FromColumns(dict)` | Exports .NET arrays to Python over the Arrow C stream. |
 | `pa.ReadParquet(path)` / `ReadIpc(path)` | Reads Parquet or Arrow IPC into a table. |
 | `table.RowCount` / `ColumnCount` / `ColumnNames` | Shape and schema. |
 | `table.ColumnTypes` | Arrow type names as pyarrow spells them (`int64`, `timestamp[us]`). |
@@ -322,8 +324,44 @@ a compatible block.
 richer than `ColumnDType`, which covers only the subset the zero-copy reader can hand back
 as a typed span.
 
-> Reading is zero-copy in this direction only. Handing .NET-owned columnar data *to* Python
-> without a copy is tracked in
+### Handing .NET data to Python
+
+The other direction. `ArrowExport.FromColumns` produces an object implementing
+`__arrow_c_stream__`, which pandas, polars and pyarrow all consume:
+
+```csharp
+using var exported = ArrowExport.FromColumns(new Dictionary<string, Array>
+{
+    ["id"] = ids,          // long[]
+    ["name"] = names,      // string[]
+    ["score"] = scores,    // double[]
+});
+
+using var table = pa.FromArrowStream(exported);
+```
+
+**Numeric and boolean columns are handed over, not copied.** The .NET array is pinned and
+Arrow points straight at it. String columns are the exception and must be encoded once:
+.NET strings are UTF-16 and separately allocated, while Arrow needs one contiguous UTF-8
+block with an offsets array.
+
+Supported element types: `sbyte`, `byte`, `short`, `ushort`, `int`, `uint`, `long`,
+`ulong`, `float`, `double`, `bool`, `string`. Every column must be the same length —
+Arrow has no representation for a ragged batch, so a mismatch throws rather than producing
+something that fails later.
+
+Ownership follows the model `DLPackTensor.Export` already uses: the pins belong to the
+exported *array*, and Python's release callback frees them when it is done. That matters
+because a consumer may release the stream while still holding the batches it took, so the
+data has to outlive the stream. In practice it means the exported data stays valid after
+the .NET wrapper is disposed, for exactly as long as Python is still using it.
+
+A stream can be consumed once — the consumer takes ownership and releases it. Asking twice
+raises on the Python side rather than releasing the same buffers twice. Export again to
+read the data a second time.
+
+> Nulls are not yet expressible: every column is exported fully populated. Nullability and
+> dictionary encoding are noted in
 > [#94](https://github.com/zcsizmadia/PyDotNet/issues/94).
 
 ## Zero-copy usage notes

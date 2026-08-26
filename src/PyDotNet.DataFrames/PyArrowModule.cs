@@ -87,6 +87,26 @@ public sealed class PyArrowModule : IDisposable
     }
 
     /// <summary>
+    /// Builds a table from anything exposing the Arrow C stream interface.
+    /// </summary>
+    /// <param name="source">
+    /// An object implementing <c>__arrow_c_stream__</c> — a frame, another table, or the
+    /// result of <see cref="PyDotNet.DataFrames.ArrowExport.FromColumns"/>.
+    /// </param>
+    /// <returns>A new table. The caller must dispose it.</returns>
+    /// <remarks>
+    /// The protocol is not pyarrow-specific, so this is also how .NET-owned columnar data
+    /// reaches a table without being converted element by element.
+    /// </remarks>
+    public PyArrowTable FromArrowStream(PyObject source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        return PyArrowTable.FromPyObject(_pa.Call("table", source));
+    }
+
+    /// <summary>
     /// Converts a pandas or polars DataFrame to an Arrow table.
     /// </summary>
     /// <param name="frame">The frame to convert.</param>

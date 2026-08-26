@@ -30,6 +30,15 @@ previously published version, and the build fails on an unintended breaking API 
   rather than copied. Part of [#94](https://github.com/zcsizmadia/PyDotNet/issues/94); the
   .NET → Python import path is still outstanding.
 
+- **`ArrowExport.FromColumns`** hands .NET columnar data to Python over the Arrow C stream
+  interface, so pandas, polars and pyarrow can each consume it. Numeric and boolean columns
+  are pinned and pointed at rather than copied; string columns are encoded once, which
+  UTF-16 to contiguous UTF-8 requires. `PyArrowModule.FromArrowStream` builds a table from
+  anything exposing `__arrow_c_stream__`. This completes the direction PyDotNet did not
+  have: reading Arrow data from Python was already zero-copy, while sending it the other
+  way meant converting element by element.
+  ([#94](https://github.com/zcsizmadia/PyDotNet/issues/94))
+
 ### Changed
 
 - **The callback invoke path is compiled rather than reflective.** `Delegate.DynamicInvoke`
@@ -41,6 +50,13 @@ previously published version, and the build fails on an unintended breaking API 
 
 ### Fixed
 
+- **Unsigned arrays reached Python with the wrong values.** `uint[]` and `ulong[]` were
+  marshaled through the signed fast paths, so `uint.MaxValue` arrived as `-1` and
+  `ulong.MaxValue` likewise — silently, and for every element above the signed maximum. The
+  cause is a CLR rule rather than a typo: the signed and unsigned array types of a given
+  width are assignment compatible, so `arr is int[]` is true for a `uint[]` and a
+  type-pattern switch matched the wrong branch. Dispatch is now on the element type.
+  ([#94](https://github.com/zcsizmadia/PyDotNet/issues/94))
 - Two pyarrow-dependent tests failed rather than skipped where pyarrow is absent, which is
   every Python 3.15 environment until wheels appear. Both now skip, so a local run on 3.15
   is green rather than reporting failures that say nothing about the code.
