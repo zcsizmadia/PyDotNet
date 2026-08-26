@@ -241,4 +241,39 @@ public sealed class MarshalingTypeCoverageTests
         await Assert.That(lengths.Count).IsEqualTo(3);
         await Assert.That(string.Join(",", lengths)).IsEqualTo("a,bb,ccc");
     }
+
+    [Test]
+    public async Task UnsignedArrays_KeepTheirValues()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+        interp.Execute("""
+            def mtc_echo_list(values):
+                return list(values)
+            """);
+
+        using var module = interp.ImportModule("__main__");
+
+        // The CLR treats the signed and unsigned array types of a given width as assignment
+        // compatible, so `arr is int[]` is true for a uint[]. The typed fast path matched on
+        // that and read every unsigned array as signed: uint.MaxValue arrived in Python as
+        // -1, silently, and ulong.MaxValue likewise.
+        using var unsigned32 = module.Call("mtc_echo_list", new uint[] { 1u, uint.MaxValue });
+        await Assert.That(unsigned32.ToString()).IsEqualTo("[1, 4294967295]");
+
+        using var unsigned64 = module.Call("mtc_echo_list", new ulong[] { 1ul, ulong.MaxValue });
+        await Assert.That(unsigned64.ToString()).IsEqualTo("[1, 18446744073709551615]");
+
+        // The signed paths still behave, which is what the wrong match was masquerading as.
+        using var signed32 = module.Call("mtc_echo_list", new int[] { -1, 2 });
+        await Assert.That(signed32.ToString()).IsEqualTo("[-1, 2]");
+
+        using var signed64 = module.Call("mtc_echo_list", new long[] { long.MinValue, 3L });
+        await Assert.That(signed64.ToString()).IsEqualTo("[-9223372036854775808, 3]");
+
+        // Narrower unsigned types never had a fast path to be caught by, and still work.
+        using var unsigned16 = module.Call("mtc_echo_list", new ushort[] { 1, ushort.MaxValue });
+        await Assert.That(unsigned16.ToString()).IsEqualTo("[1, 65535]");
+    }
 }

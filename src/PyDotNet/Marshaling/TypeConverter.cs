@@ -415,6 +415,45 @@ internal static class TypeConverter
         var list = NativeMethods.PyList_New(arr.Length);
 
         // Typed fast paths avoid per-element boxing via Array.GetValue().
+        //
+        // Dispatched on the element type, not with type patterns. The CLR treats the signed
+        // and unsigned array types of a given width as assignment compatible, so
+        // `arr is int[]` is true for a uint[] — which sent uint.MaxValue to Python as -1,
+        // and ulong.MaxValue likewise, silently. The unsigned cases therefore have to be
+        // tested before, and separately from, their signed twins.
+        var element = arr.GetType().GetElementType();
+
+        if (element == typeof(uint))
+        {
+            var u32 = (uint[])arr;
+            for (var i = 0; i < u32.Length; i++)
+            {
+                _ = NativeMethods.PyList_SetItem(
+                    list, i, NativeMethods.PyLong_FromUnsignedLongLong(u32[i]));
+            }
+
+            return list;
+        }
+
+        if (element == typeof(ulong))
+        {
+            var u64 = (ulong[])arr;
+            for (var i = 0; i < u64.Length; i++)
+            {
+                _ = NativeMethods.PyList_SetItem(
+                    list, i, NativeMethods.PyLong_FromUnsignedLongLong(u64[i]));
+            }
+
+            return list;
+        }
+
+        if (element == typeof(nuint) || element == typeof(nint))
+        {
+            // Same hazard, and no fast path below to fall into: let the boxing fallback
+            // convert each element by its own type rather than by a mistaken match.
+            return FinishArrayToPython(list, arr);
+        }
+
         switch (arr)
         {
             case double[] d:
@@ -463,7 +502,15 @@ internal static class TypeConverter
                 return list;
         }
 
-        // General fallback — boxes each element via Array.GetValue().
+        return FinishArrayToPython(list, arr);
+    }
+
+    /// <summary>
+    /// Converts each element through <see cref="ToPython"/>, boxing via
+    /// <see cref="Array.GetValue(int)"/>. Used for element types with no fast path.
+    /// </summary>
+    private static IntPtr FinishArrayToPython(IntPtr list, Array arr)
+    {
         for (var i = 0; i < arr.Length; i++)
         {
             var item = ToPython(arr.GetValue(i));
