@@ -968,6 +968,13 @@ public sealed class DataFrame : IDisposable
         return PyObject.FromNewReference(module);
     }
 
+    // ── Internal access ───────────────────────────────────────────────────
+
+    // Mirrors Series.PyObj. Needed by PyArrowModule to hand the frame to pyarrow, which
+    // reads it through the Arrow C stream protocol rather than converting element by
+    // element.
+    internal PyObject PyObj => _obj;
+
     // ── Disposal ──────────────────────────────────────────────────────────
 
     /// <summary>Releases the Python object reference.</summary>

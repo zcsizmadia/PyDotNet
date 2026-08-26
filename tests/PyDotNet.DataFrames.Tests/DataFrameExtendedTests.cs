@@ -251,6 +251,10 @@ public sealed class DataFrameExtendedTests
     [Test]
     public async Task ToParquet_WritesFile()
     {
+        // pandas writes Parquet through pyarrow or fastparquet; with neither installed
+        // this belongs in the skipped column rather than the failed one.
+        await PythonEnvironment.SkipIfPyArrowUnavailableAsync();
+
         var (interp, df) = MakePandas();
         using (interp) using (df)
         {

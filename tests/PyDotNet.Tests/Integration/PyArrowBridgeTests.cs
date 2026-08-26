@@ -43,10 +43,19 @@ public sealed class PyArrowBridgeTests
     {
         var interp = await CreatePandasInterpreterAsync();
 
-        // TryExportStream invokes __arrow_c_stream__() which requires pyarrow
+        // TryExportStream invokes __arrow_c_stream__(), which pandas implements through
+        // pyarrow. Importing it unguarded made this fail rather than skip wherever pyarrow
+        // is absent — as it is on 3.15, which has no wheels yet.
         using var probe = PyRuntime.CreateInterpreter();
-
-        probe.ImportModule("pyarrow").Dispose();
+        try
+        {
+            probe.ImportModule("pyarrow").Dispose();
+        }
+        catch (Exception)
+        {
+            interp.Dispose();
+            Skip.Test("pyarrow is not installed; __arrow_c_stream__ is unavailable on pandas.");
+        }
 
         return interp;
     }

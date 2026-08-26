@@ -22,6 +22,14 @@ previously published version, and the build fails on an unintended breaking API 
   raises rather than leaving the await pending.
   ([#92](https://github.com/zcsizmadia/PyDotNet/issues/92))
 
+- **`PyArrowTable` and `PyArrowModule`**, a typed surface over `pyarrow.Table` — the type
+  Arrow-shaped Python code passes around, and the one pandas and polars both convert
+  through. Shape and Arrow-level schema, `nbytes`, zero-copy batch export, conversion to
+  and from either frame library, and Parquet/IPC read and write. `FromDataFrame` goes
+  through the Arrow C stream protocol where the frame exposes it, so buffers are shared
+  rather than copied. Part of [#94](https://github.com/zcsizmadia/PyDotNet/issues/94); the
+  .NET → Python import path is still outstanding.
+
 ### Changed
 
 - **The callback invoke path is compiled rather than reflective.** `Delegate.DynamicInvoke`
@@ -30,6 +38,12 @@ previously published version, and the build fails on an unintended breaking API 
   to end on `sorted()` over 512 strings, the median call went from 0.312 ms to 0.216 ms
   with no overlap between the two sets of readings.
   ([#93](https://github.com/zcsizmadia/PyDotNet/issues/93))
+
+### Fixed
+
+- Two pyarrow-dependent tests failed rather than skipped where pyarrow is absent, which is
+  every Python 3.15 environment until wheels appear. Both now skip, so a local run on 3.15
+  is green rather than reporting failures that say nothing about the code.
 
 ### Documentation
 
