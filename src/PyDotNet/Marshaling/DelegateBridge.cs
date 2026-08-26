@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -60,6 +61,12 @@ internal static unsafe class DelegateBridge
 
         internal required bool ReturnsVoid { get; init; }
 
+        /// <summary>
+        /// Calls <see cref="Target"/> with the bound arguments. Shared by every callable of
+        /// the same delegate type — see <see cref="GetInvoker"/>.
+        /// </summary>
+        internal required Func<Delegate, object?[], object?> Invoke { get; init; }
+
         /// <summary>Unmanaged blocks freed when the capsule is collected.</summary>
         internal IntPtr MethodDef { get; set; }
 
@@ -74,6 +81,9 @@ internal static unsafe class DelegateBridge
 
     /// <summary>Builtin exception types, resolved once each. Borrowed references.</summary>
     private static readonly ConcurrentDictionary<string, IntPtr> _builtinExceptions = new();
+
+    /// <summary>One compiled invoker per delegate type. See <see cref="GetInvoker"/>.</summary>
+    private static readonly ConcurrentDictionary<Type, Func<Delegate, object?[], object?>> _invokers = new();
 
     /// <summary>
     /// Wraps <paramref name="target"/> as a Python callable and returns a new reference.
@@ -117,6 +127,7 @@ internal static unsafe class DelegateBridge
             Target = target,
             Parameters = parameters,
             ReturnsVoid = returnType == typeof(void),
+            Invoke = GetInvoker(target.GetType(), parameters, returnType),
         };
 
         var handle = GCHandle.Alloc(context);
@@ -191,18 +202,10 @@ internal static unsafe class DelegateBridge
                 return IntPtr.Zero;
             }
 
-            object? result;
-            try
-            {
-                result = context.Target.DynamicInvoke(values);
-            }
-            catch (TargetInvocationException ex) when (ex.InnerException is not null)
-            {
-                // DynamicInvoke wraps whatever the delegate threw. The wrapper says nothing
-                // useful, and reporting it would hide the actual failure.
-                SetErrorFrom(ex.InnerException);
-                return IntPtr.Zero;
-            }
+            // Calls the delegate directly rather than through DynamicInvoke, so whatever it
+            // throws arrives here unwrapped and the catch below reports the real failure
+            // rather than a TargetInvocationException that says nothing.
+            var result = context.Invoke(context.Target, values);
 
             return context.ReturnsVoid ? TypeConverter.GetNone() : TypeConverter.ToPython(result);
         }
@@ -510,6 +513,73 @@ internal static unsafe class DelegateBridge
         // again on every raise.
         _builtinExceptions[typeName] = resolved;
         return resolved == IntPtr.Zero ? null : resolved;
+    }
+
+    /// <summary>
+    /// Returns the invoker for a delegate type, compiling it on first use.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The alternative, <c>Delegate.DynamicInvoke</c>, walks parameter metadata and boxes
+    /// through reflection on every call — and this is a per-element path, not a per-call
+    /// one: <c>sorted(key=...)</c> invokes the callback once per comparison, and
+    /// <c>DataFrame.apply</c> once per row. The marshaling cost per argument is inherent to
+    /// the boundary; the reflection on top of it is not.
+    /// </para>
+    /// <para>
+    /// Keyed by delegate <em>type</em> rather than by delegate instance, so the compilation
+    /// is paid once per signature and shared by every callable of that shape. Keying by
+    /// instance would move the cost onto <see cref="Create"/>, which callers may run in a
+    /// loop — and the set of distinct signatures in a program is small, while the set of
+    /// closures need not be.
+    /// </para>
+    /// <para>
+    /// Under NativeAOT this falls back to the expression interpreter, which is no worse
+    /// than the reflection it replaces. Emitting these from a source generator is the
+    /// AOT-correct answer and the reason the invoke path is a single seam.
+    /// </para>
+    /// </remarks>
+    private static Func<Delegate, object?[], object?> GetInvoker(
+        Type delegateType,
+        ParameterInfo[] parameters,
+        Type returnType)
+    {
+        return _invokers.GetOrAdd(
+            delegateType,
+            static (_, state) => BuildInvoker(state.Type, state.Parameters, state.ReturnType),
+            (Type: delegateType, Parameters: parameters, ReturnType: returnType));
+    }
+
+    private static Func<Delegate, object?[], object?> BuildInvoker(
+        Type delegateType,
+        ParameterInfo[] parameters,
+        Type returnType)
+    {
+        var targetParameter = Expression.Parameter(typeof(Delegate), "target");
+        var argumentsParameter = Expression.Parameter(typeof(object?[]), "args");
+
+        // The trampoline hands back the same delegate the context holds, so this cast
+        // always succeeds; it is what lets one compiled invoker serve every instance.
+        var typedTarget = Expression.Convert(targetParameter, delegateType);
+
+        var arguments = new Expression[parameters.Length];
+        for (var i = 0; i < parameters.Length; i++)
+        {
+            arguments[i] = Expression.Convert(
+                Expression.ArrayIndex(argumentsParameter, Expression.Constant(i)),
+                parameters[i].ParameterType);
+        }
+
+        Expression body = Expression.Invoke(typedTarget, arguments);
+
+        // A void delegate has no value to hand back, so the lambda yields null rather than
+        // the caller having to special-case the return type at every call.
+        body = returnType == typeof(void)
+            ? Expression.Block(body, Expression.Constant(null, typeof(object)))
+            : Expression.Convert(body, typeof(object));
+
+        return Expression.Lambda<Func<Delegate, object?[], object?>>(
+            body, targetParameter, argumentsParameter).Compile();
     }
 
     /// <summary>
