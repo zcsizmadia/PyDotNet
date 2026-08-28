@@ -219,7 +219,12 @@ internal static class TypeConverter
     {
         if (pyObj == IntPtr.Zero)
         {
+            // Annotating targetType would satisfy the analyzer, but the requirement
+            // then propagates out through every public conversion entry point and on
+            // to callers. Tracked in #107; not a claim that trimming is safe here.
+#pragma warning disable IL2067
             return targetType.IsValueType ? Activator.CreateInstance(targetType) : null;
+#pragma warning restore IL2067
         }
 
         // Detect Python type and try to satisfy the requested .NET type
@@ -697,8 +702,13 @@ internal static class TypeConverter
 
     private static object PythonToList(IntPtr pyObj, Type elementType)
     {
+        // The List<T> instantiation for this element type may not have been
+        // generated ahead of time. Generating the conversions per element type is
+        // the real fix; tracked in #107.
+#pragma warning disable IL3050
         var list = (System.Collections.IList)Activator.CreateInstance(
             typeof(List<>).MakeGenericType(elementType))!;
+#pragma warning restore IL3050
 
         var len = NativeMethods.PySequence_Length(pyObj);
         if (len < 0)
@@ -725,14 +735,21 @@ internal static class TypeConverter
 
     private static Array PythonToArray(IntPtr pyObj, Type elementType)
     {
+        // Array.CreateInstance over a runtime element type has no
+        // ahead-of-time-safe equivalent: the array code for that element type may
+        // never have been generated. Tracked in #107.
         var len = NativeMethods.PySequence_Length(pyObj);
         if (len < 0)
         {
             NativeMethods.PyErr_Clear();
+#pragma warning disable IL3050
             return Array.CreateInstance(elementType, 0);
+#pragma warning restore IL3050
         }
 
+#pragma warning disable IL3050
         var result = Array.CreateInstance(elementType, (int)len);
+#pragma warning restore IL3050
         for (nint i = 0; i < len; i++)
         {
             var item = NativeMethods.PySequence_GetItem(pyObj, i); // new ref
@@ -1212,7 +1229,10 @@ internal static class TypeConverter
         }
 
         // ValueTuple.Create only supports up to 8 items — use Activator for generic construction.
+        // Tracked in #107, along with the other runtime-constructed generics here.
+#pragma warning disable IL2067
         return Activator.CreateInstance(valueTupleType, items)!;
+#pragma warning restore IL2067
     }
 
     /// <summary>
