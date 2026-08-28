@@ -5,7 +5,7 @@
     <OutputType>Library</OutputType>
     <RootNamespace>PyDotNet</RootNamespace>
     <AssemblyName>PyDotNet</AssemblyName>
-    <Description>A modern, high-performance, async-aware, zero-copy Python ↔ .NET interop runtime.</Description>
+    <Description>A modern, high-performance, async-aware, zero-copy interop runtime for hosting Python inside .NET.</Description>
     <PackageTags>python;interop;dotnet;cpython;zero-copy;async</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <IsPackable>true</IsPackable>

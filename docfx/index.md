@@ -4,11 +4,17 @@ _layout: landing
 
 # PyDotNet
 
-A modern, high-performance, async-aware, zero-copy Python ↔ .NET interop runtime.
+A modern, high-performance, async-aware, zero-copy interop runtime for hosting Python inside .NET.
 
 PyDotNet embeds CPython directly inside your .NET process. No subprocess, no sockets, no
 serialisation — just raw function calls across the language boundary with full GIL
 awareness and optional zero-copy memory sharing.
+
+> **Which way round?** .NET is the host: your application is a .NET process that
+> starts and owns a CPython interpreter. Calls and data flow in both directions
+> across that boundary, but the process is always .NET. Starting the CLR *from* a
+> Python process — which [`pythonnet`](https://github.com/pythonnet/pythonnet) also
+> supports — is tracked in [#105](https://github.com/zcsizmadia/PyDotNet/issues/105).
 
 ```csharp
 PyRuntime.Initialize();
