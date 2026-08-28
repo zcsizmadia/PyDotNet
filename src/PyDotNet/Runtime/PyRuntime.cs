@@ -70,6 +70,13 @@ public static class PyRuntime
     public static bool IsGilEnabled { get; private set; } = true;
 
     /// <summary>
+    /// Whether the interpreter provides <c>PyWeakref_GetRef</c>, added in CPython
+    /// 3.13. Its predecessor <c>PyWeakref_GetObject</c> is removed in 3.15, so both
+    /// paths are carried while 3.11 and 3.12 remain supported.
+    /// </summary>
+    internal static bool SupportsWeakrefGetRef { get; private set; }
+
+    /// <summary>
     /// Configures the runtime logger. Must be called before <see cref="Initialize()"/>.
     /// </summary>
     public static void SetLogger(ILogger logger)
@@ -334,6 +341,7 @@ public static class PyRuntime
         }
 
         IsGilEnabled = DetectGilEnabled();
+        SupportsWeakrefGetRef = DetectWeakrefGetRef();
 
         // Say so rather than accepting the value and doing nothing with it. Someone raising
         // this is expecting more parallelism, and would otherwise have no way to discover
@@ -929,6 +937,34 @@ public static class PyRuntime
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Decides by version rather than by probing: the symbol's absence below 3.13
+    /// surfaces as an <see cref="EntryPointNotFoundException"/> at the first call,
+    /// which is a poor thing to discover from inside a weak-reference lookup.
+    /// </summary>
+    private static bool DetectWeakrefGetRef()
+    {
+        // Py_GetVersion needs no GIL. ReadPythonVersion has already trimmed the
+        // build details, leaving "3.14.4" — or "unknown" if it could not be read.
+        var version = ReadPythonVersion();
+
+        var dot = version.IndexOf('.', StringComparison.Ordinal);
+        if (dot <= 0 || !int.TryParse(version.AsSpan(0, dot), out var major))
+        {
+            return false;
+        }
+
+        var rest = version.AsSpan(dot + 1);
+        var digits = 0;
+        while (digits < rest.Length && char.IsAsciiDigit(rest[digits]))
+        {
+            digits++;
+        }
+
+        return int.TryParse(rest[..digits], out var minor)
+            && (major > 3 || (major == 3 && minor >= 13));
     }
 
     private static bool DetectGilEnabled()

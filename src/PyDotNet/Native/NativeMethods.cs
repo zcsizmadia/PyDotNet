@@ -66,9 +66,6 @@ internal static partial class NativeMethods
     internal static extern IntPtr PyImport_AddModule(
         [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
 
-    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    internal static extern IntPtr PyImport_ImportModuleNoBlock(
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
 
     // ── Module helpers ─────────────────────────────────────────────────────
 
@@ -144,8 +141,18 @@ internal static partial class NativeMethods
     internal static extern IntPtr PyUnicode_FromString(
         [MarshalAs(UnmanagedType.LPUTF8Str)] string s);
 
-    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    internal static extern IntPtr PyUnicode_AsUTF8(IntPtr obj);
+    /// <summary>
+    /// Returns a pointer into the string's internal UTF-8 buffer, or
+    /// <see cref="IntPtr.Zero"/> on error.
+    /// </summary>
+    /// <remarks>
+    /// Forwards to <see cref="PyUnicode_AsUTF8AndSize"/> rather than importing
+    /// CPython's <c>PyUnicode_AsUTF8</c>, which is outside the Limited API while its
+    /// sized counterpart has been in the Stable ABI since 3.10. Both return the same
+    /// pointer; only the length is dropped, which no caller here reads.
+    /// </remarks>
+    internal static IntPtr PyUnicode_AsUTF8(IntPtr obj) =>
+        PyUnicode_AsUTF8AndSize(obj, out _);
 
     /// <summary>
     /// Returns a pointer directly into the Python string's internal UTF-8 buffer and
@@ -502,6 +509,20 @@ internal static partial class NativeMethods
     /// </summary>
     [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern IntPtr PyWeakref_GetObject(IntPtr weakRef);
+
+    /// <summary>
+    /// Stores a <em>strong</em> reference to the referent in <paramref name="obj"/>.
+    /// Returns 1 when the referent is alive, 0 when it has been collected, and -1 on
+    /// error with a Python exception set.
+    /// </summary>
+    /// <remarks>
+    /// Added in CPython 3.13, and the replacement for
+    /// <see cref="PyWeakref_GetObject"/>, which 3.15 removes. Call only when
+    /// <see cref="PyDotNet.Runtime.PyRuntime.SupportsWeakrefGetRef"/> is set: below
+    /// 3.13 the symbol does not exist and binding it throws at the first call.
+    /// </remarks>
+    [DllImport(PythonDll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern int PyWeakref_GetRef(IntPtr weakRef, out IntPtr obj);
 
     // ── Version ────────────────────────────────────────────────────────────
 

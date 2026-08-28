@@ -1,6 +1,7 @@
 using PyDotNet.Exceptions;
 using PyDotNet.Marshaling;
 using PyDotNet.Native;
+using PyDotNet.Runtime;
 
 namespace PyDotNet.Types;
 
@@ -97,6 +98,22 @@ public sealed class PyWeakRef<T> : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         using var gil = new GilScope();
 
+        if (PyRuntime.SupportsWeakrefGetRef)
+        {
+            // Liveness and ownership settle in one call, so unlike the path below
+            // there is no interval between observing the referent and retaining it.
+            var status = NativeMethods.PyWeakref_GetRef(
+                _weakRefObj!.Handle, out var strong);
+
+            if (status < 0)
+            {
+                NativeMethods.PyErr_Clear();
+                return null;
+            }
+
+            return status == 1 ? (T)PyObject.FromNewReference(strong) : null;
+        }
+
         if (IsDeadRef(_weakRefObj!.Handle))
         {
             return null;
@@ -135,6 +152,25 @@ public sealed class PyWeakRef<T> : IDisposable
     /// </summary>
     private static bool IsDeadRef(IntPtr weakRefHandle)
     {
+        if (PyRuntime.SupportsWeakrefGetRef)
+        {
+            var status = NativeMethods.PyWeakref_GetRef(weakRefHandle, out var strong);
+            if (status <= 0)
+            {
+                if (status < 0)
+                {
+                    NativeMethods.PyErr_Clear();
+                }
+
+                return true;
+            }
+
+            // Only liveness was asked for, so the reference just acquired is ours
+            // to release rather than to return.
+            NativeMethods.Py_DecRef(strong);
+            return false;
+        }
+
         var borrowed = NativeMethods.PyWeakref_GetObject(weakRefHandle);
         if (borrowed == IntPtr.Zero)
         {
