@@ -2,9 +2,15 @@
 
 # PyDotNet
 
-A modern, high-performance, async-aware, zero-copy Python ↔ .NET interop runtime.
+A modern, high-performance, async-aware, zero-copy interop runtime for hosting Python inside .NET.
 
 PyDotNet embeds CPython directly inside your .NET process. No subprocess, no sockets, no serialisation — just raw function calls across the language boundary with full GIL awareness and optional zero-copy memory sharing.
+
+> **Which way round?** .NET is the host: your application is a .NET process that starts
+> and owns a CPython interpreter. Calls and data flow in both directions across that
+> boundary, but the process is always .NET. Starting the CLR *from* a Python process —
+> which [`pythonnet`](https://github.com/pythonnet/pythonnet) also supports — is tracked
+> in [#105](https://github.com/zcsizmadia/PyDotNet/issues/105).
 
 > **Plugin packages** — typed, idiomatic C# wrappers for popular Python libraries ship as separate NuGet packages built on top of PyDotNet core:
 > [`PyDotNet.NumPy`](docs/numpy.md) · [`PyDotNet.DataFrames`](docs/dataframes.md) · [`PyDotNet.Torch`](docs/torch.md) · [`PyDotNet.Matplotlib`](docs/matplotlib.md) · [`PyDotNet.Extensions.Hosting`](docs/hosting.md) · `PyDotNet.LangChain` _(planned)_
@@ -109,7 +115,7 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 | Approach | Call latency | Zero-copy memory | Async coroutines | Notes |
 |---|---|---|---|---|
 | **PyDotNet** | ~1–3 µs | ✓ `Span<T>` / DLPack | ✓ native `Task` | In-process; no serialization |
-| `pythonnet` | ~5–20 µs | ✗ | ✗ | In-process but COM-style reflection overhead |
+| `pythonnet` | ~5–20 µs | ~ raw `IntPtr` via `PyBuffer` | ✗ | In-process; reflection-based binder |
 | Subprocess + stdout | ~1–50 ms | ✗ | ✗ | Process start + pipe encoding |
 | REST / gRPC service | ~0.5–10 ms | ✗ | via HTTP/2 | Network stack; separate process/container |
 
