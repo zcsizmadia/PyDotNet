@@ -143,13 +143,13 @@ public static class PythonLibraryLocator
 
             dirs.AddRange(["/usr/lib", "/usr/local/lib", "/usr/lib64"]);
 
-            foreach (var dir in dirs)
+            var candidate = dirs
+                .Select(dir => Path.Combine(dir, rawPath))
+                .FirstOrDefault(File.Exists);
+
+            if (candidate is not null)
             {
-                var candidate = Path.Combine(dir, rawPath);
-                if (File.Exists(candidate))
-                {
-                    return candidate;
-                }
+                return candidate;
             }
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
@@ -160,13 +160,13 @@ public static class PythonLibraryLocator
                 ? ["/opt/homebrew/lib", "/usr/local/lib", "/Library/Frameworks/Python.framework/Versions/Current/lib"]
                 : ["/usr/local/lib", "/opt/homebrew/lib", "/Library/Frameworks/Python.framework/Versions/Current/lib"];
 
-            foreach (var dir in dirs)
+            var candidate = dirs
+                .Select(dir => Path.Combine(dir, rawPath))
+                .FirstOrDefault(File.Exists);
+
+            if (candidate is not null)
             {
-                var candidate = Path.Combine(dir, rawPath);
-                if (File.Exists(candidate))
-                {
-                    return candidate;
-                }
+                return candidate;
             }
         }
 

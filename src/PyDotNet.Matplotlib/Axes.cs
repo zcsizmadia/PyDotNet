@@ -395,15 +395,9 @@ public sealed class Axes : IDisposable
 
         try
         {
-            PyObject result;
-            if (kwargs is null or { Count: 0 })
-            {
-                result = PyModule.CallInternal(func, args);
-            }
-            else
-            {
-                result = PyModule.CallWithKwargsInternal(func, args, kwargs);
-            }
+            var result = kwargs is null or { Count: 0 }
+                ? PyModule.CallInternal(func, args)
+                : PyModule.CallWithKwargsInternal(func, args, kwargs);
 
             result.Dispose();
         }
