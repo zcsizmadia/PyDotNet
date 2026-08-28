@@ -145,4 +145,28 @@ public sealed class PyWeakRefTests
         using var back = weak.TryGetTarget();
         await Assert.That(back).IsNotNull();
     }
+
+    // ── Capability detection ──────────────────────────────────
+
+    [Test]
+    public async Task SupportsWeakrefGetRef_MatchesTheRunningInterpreter()
+    {
+        await PythonEnvironment.SkipIfUnavailableAsync();
+
+        using var interp = PyRuntime.CreateInterpreter();
+
+        // Asked of Python rather than derived from Py_GetVersion, so this cross-checks
+        // the detection instead of restating it.
+        //
+        // Worth its own test because the failure is invisible locally: detection stuck
+        // at false leaves every other weak-reference test passing on 3.14, where the old
+        // symbol still exists, and breaks only on 3.15, where it does not.
+        using var probe = interp.Evaluate("__import__('sys').version_info >= (3, 13)");
+        var expected = probe.As<bool>();
+
+        await Assert.That(PyRuntime.SupportsWeakrefGetRef)
+            .IsEqualTo(expected)
+            .Because("PyWeakref_GetRef exists from 3.13, and PyWeakref_GetObject is "
+                + "removed in 3.15, so picking the wrong one is only visible later");
+    }
 }
