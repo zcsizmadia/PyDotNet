@@ -1,0 +1,27 @@
+﻿<Project>
+
+  <!-- Root properties still apply; this file adds only what should hold for shipping code
+       and not for tests, whose reflection-heavy assertions are not shipped to anyone. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <!-- A ratchet, not a promise.
+
+         These three switches are analyzer-only. They surface trim and AOT hazards at build
+         time and, with TreatWarningsAsErrors already set at the root, stop new ones being
+         introduced. They emit no IL: the produced assembly is byte-identical with and
+         without them, so enabling them changes nothing about the published packages.
+
+         Deliberately absent is IsAotCompatible, and the IsTrimmable it implies, which
+         stamps [AssemblyMetadata("IsTrimmable", "True")] into the assembly and thereby
+         tells consumers that trimming it is safe. That is not true yet — see the
+         suppressed sites in TypeConverter and DelegateBridge, which need generated code
+         rather than runtime reflection before the claim holds. Setting it today would hand
+         consumers a guarantee we cannot keep, and would change the packages. It is the
+         last step of the work, not the first. -->
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
+  </PropertyGroup>
+
+</Project>

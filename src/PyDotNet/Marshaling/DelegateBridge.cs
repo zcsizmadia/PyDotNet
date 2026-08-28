@@ -831,8 +831,14 @@ internal static unsafe class DelegateBridge
                 : typeof(TaskAdapters).GetMethod(
                     nameof(TaskAdapters.FromValueTaskOf), BindingFlags.NonPublic | BindingFlags.Static)!;
 
+            // Unwrapping Task<T> means instantiating the adapter over T. Shared
+            // generics cover reference types, but a value-typed T that nothing else
+            // instantiated has no code to call. Generating the adapter per T is the
+            // real fix; tracked in #107.
+#pragma warning disable IL3050
             return method.MakeGenericMethod(resultType)
                 .CreateDelegate<Func<object?, Task<object?>>>();
+#pragma warning restore IL3050
         });
     }
 

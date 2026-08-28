@@ -10,6 +10,13 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <IsPackable>true</IsPackable>
     <PackageReadmeFile>hosting.md</PackageReadmeFile>
+
+    <!-- Binds options through the generated binder rather than reflection, which is
+         what makes AddPyDotNet trim- and AOT-safe. This is a real fix rather than a
+         suppression: it removes all six IL2026/IL3050 warnings this project produced.
+         It does add generated code to the assembly, so unlike the analyzer switches it
+         is a genuine change to the published package. -->
+    <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
   </PropertyGroup>
 
   <ItemGroup>
