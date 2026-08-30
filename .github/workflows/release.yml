@@ -128,7 +128,7 @@ jobs:
       # artifact that was verified against the tag in the step above, so the attested files
       # are the ones actually pushed.
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: 'nupkgs/*.nupkg'
 
