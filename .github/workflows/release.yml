@@ -52,7 +52,7 @@ jobs:
       # If the tagged commit has not finished building, this step fails rather than
       # publishing the wrong bits. Re-run the release job once its build is green.
       - name: Download nuget packages from build workflow
-        uses: dawidd6/action-download-artifact@v23
+        uses: dawidd6/action-download-artifact@v24
         with:
           workflow: build.yml
           workflow_conclusion: success
