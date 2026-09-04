@@ -243,9 +243,10 @@ jobs:
   # Python 3.15 is still a release candidate (final: 2026-10-01), so it is kept out of the
   # matrix above and cannot fail the build. Two reasons, both temporary:
   #
-  #   * Third-party wheels lag a new release. At 3.15.0rc1 numpy, pandas and polars are
-  #     available but pyarrow, matplotlib and torch are not, so the plugin test projects
-  #     cannot run at all.
+  #   * Third-party wheels lag a new release. At 3.15.0rc2 numpy and polars are available
+  #     but pandas, pyarrow, matplotlib and torch are not, so the plugin test projects
+  #     cannot run at all. For 3.14 the last of these (pyarrow) landed 17 days after the
+  #     final release, so the wait here is likely to outlast 3.15 GA on 2026-10-01.
   #   * A release candidate can change under us, and that should not block an unrelated
   #     pull request.
   #

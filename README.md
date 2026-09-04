@@ -147,7 +147,7 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 
 Python must be installed **with its shared library** and be discoverable. See [Configuration](#configuration) for the manual override.
 
-> **Python 3.15** is supported and verified against 3.15.0rc1, but it is still a release
+> **Python 3.15** is supported and verified against 3.15.0rc2, but it is still a release
 > candidate (final: 2026-10-01). CI runs it as an informational job that cannot fail the
 > build, because most third-party wheels — `pyarrow`, `matplotlib`, `torch` — do not exist
 > for it yet. 3.11 through 3.14 are the versions the build enforces. PyDotNet picks its
@@ -1291,7 +1291,7 @@ Console.WriteLine(PyRuntime.EffectiveConfiguration);
 // program name /srv/app/.venv/bin/python; prepended 1 sys.path entry [/opt/myapp/overrides]
 ```
 
-It exposes the loaded library, the Python version (including the release level, so a release candidate reports `3.15.0rc1`), the program name and home actually applied, the `sys.path` entries and their placement, whether the GIL is enabled, and whether initialization went through `PyInitConfig` or the legacy globals.
+It exposes the loaded library, the Python version (including the release level, so a release candidate reports `3.15.0rc2`), the program name and home actually applied, the `sys.path` entries and their placement, whether the GIL is enabled, and whether initialization went through `PyInitConfig` or the legacy globals.
 
 `VirtualEnvironmentWarning` is set when the configured virtual environment appears to have been created by a different Python installation than the library that was loaded — the usual cause of `ModuleNotFoundError: No module named 'encodings'`. The same finding is logged, but the default `ILogger` discards everything, so a host that never attached one would otherwise have no way to see it.
 
@@ -1600,7 +1600,7 @@ Intel macOS is not covered by CI. PyTorch no longer publishes macOS x86_64 wheel
 
 Windows arm64 runs as an informational job rather than a full matrix leg, for the same reason: `pyarrow` and `torch` publish no `win_arm64` wheels, so those plugin tests cannot run there. `numpy`, `pandas` and `matplotlib` do, so the gap may close on its own. The job covers what actually differs between platforms — locating and loading `libpython`, and configuring the interpreter.
 
-Python 3.15 runs as a separate job that cannot fail the build. Most third-party wheels do not exist for it yet — `pyarrow`, `matplotlib` and `torch` are all absent at 3.15.0rc1 — so only the interpreter lifecycle suite runs there, covering initialization, virtual environment activation, and isolation. It moves into the matrix once 3.15 is final and the wheels have caught up.
+Python 3.15 runs as a separate job that cannot fail the build. Most third-party wheels do not exist for it yet — `pyarrow`, `matplotlib` and `torch` are all absent at 3.15.0rc2 — so only the interpreter lifecycle suite runs there, covering initialization, virtual environment activation, and isolation. It moves into the matrix once 3.15 is final and the wheels have caught up.
 
 CI runs the full test suite across all three .NET TFMs (net8.0, net9.0, net10.0) and all four supported Python versions on every push.
 

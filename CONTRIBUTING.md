@@ -110,5 +110,5 @@ be present and still lose.
 
 Publish a GitHub Release from `main` tagged `v<major>.<minor>.<patch>`. The version in
 `Directory.Build.props` must already match — the release workflow validates the tag against
-it and fails otherwise. The workflow then builds the tagged commit and publishes all five
+it and fails otherwise. The workflow then builds the tagged commit and publishes all six
 packages.

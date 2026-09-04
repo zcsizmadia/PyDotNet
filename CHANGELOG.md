@@ -9,6 +9,8 @@ previously published version, and the build fails on an unintended breaking API 
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-09-04
+
 ### Added
 
 - **Asynchronous callbacks.** A delegate returning `Task`, `Task<T>`, `ValueTask` or
@@ -60,6 +62,17 @@ previously published version, and the build fails on an unintended breaking API 
 - Two pyarrow-dependent tests failed rather than skipped where pyarrow is absent, which is
   every Python 3.15 environment until wheels appear. Both now skip, so a local run on 3.15
   is green rather than reporting failures that say nothing about the code.
+- **Two C-API functions CPython removes in 3.15 are gone.** `PyImport_ImportModuleNoBlock`
+  and `PyWeakref_GetObject` are deprecated in 3.13 and removed in 3.15. Because P/Invoke
+  resolves lazily they would have surfaced as a missing export at the call site rather than
+  at load, on an interpreter that is now weeks from release. The first was an unused
+  binding. The second is replaced by `PyWeakref_GetRef` from 3.13 upward, selected by
+  version because it does not exist below that — and it is the better API regardless,
+  returning a strong reference with a real error channel where its predecessor returned a
+  borrowed one and signalled a dead referent by returning `Py_None`. Separately,
+  `PyUnicode_AsUTF8` now forwards to the sized variant, which unlike it is in the Limited
+  API, leaving `PyRun_String` the only one of the 102 entry points outside it.
+  ([#108](https://github.com/zcsizmadia/PyDotNet/issues/108))
 
 ### Documentation
 
@@ -69,6 +82,14 @@ previously published version, and the build fails on an unintended breaking API 
   only route, omitting the free-threaded build PyDotNet already runs in CI. Corrected, with
   both routes and their trade-offs stated and the choice left open.
   ([#95](https://github.com/zcsizmadia/PyDotNet/issues/95))
+- The tagline read `Python ↔ .NET`, which suggested the CLR could be hosted from Python.
+  It cannot: .NET is always the host process, and calls and data flow both ways inside it.
+  Now said plainly in the README, the docs landing page and the NuGet package description —
+  the last being where most people meet the project first. The comparison table also
+  credited `pythonnet` with no zero-copy support, which was wrong: its `PyBuffer` does
+  implement the buffer protocol, exposing a raw `IntPtr` alongside copying helpers. The
+  real distinction is ergonomics, and the table now says so.
+  ([#104](https://github.com/zcsizmadia/PyDotNet/discussions/104))
 
 ### Internal
 
@@ -78,6 +99,22 @@ previously published version, and the build fails on an unintended breaking API 
   gone and it is checked like the other five.
 - `PyDotNet.Torch` shows its own guide on NuGet rather than the repository README, matching
   the other three plugin packages.
+- **Trim and AOT analysis is enforced on shipping code.** Nothing checked it before, which
+  is how six runtime-reflection sites accumulated unnoticed. The analyzers now run over
+  `src/` with warnings already errors, so a *new* hazard fails the build; the six known
+  ones are suppressed at their call sites with a note on what each costs, which records a
+  tracked limitation rather than a claim that trimming is safe. `IsAotCompatible` is
+  deliberately not set: it stamps metadata telling consumers trimming is safe, which is not
+  yet true, and unlike the analyzers it would change the packages. Enabling the analyzers
+  alone leaves every assembly byte-identical. `PyDotNet.Extensions.Hosting` is fixed rather
+  than suppressed — options bind through the generated binder instead of reflection.
+  ([#107](https://github.com/zcsizmadia/PyDotNet/issues/107))
+- Three CodeQL style alerts cleared where a loop genuinely read better as an expression. A
+  fourth was tried and reverted: routing `Path.Combine` through a field and a lambda cost
+  the analyzer the dataflow that proved its arguments relative, trading one alert for
+  another. The remaining alerts are dismissed rather than fixed — most are catches at
+  unmanaged callback boundaries, where letting a managed exception unwind into C is
+  undefined behaviour.
 
 ## [1.2.0] — 2026-08-25
 
@@ -287,7 +324,8 @@ previously published version, and the build fails on an unintended breaking API 
 
 - First release.
 
-[Unreleased]: https://github.com/zcsizmadia/PyDotNet/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/zcsizmadia/PyDotNet/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/zcsizmadia/PyDotNet/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/zcsizmadia/PyDotNet/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/zcsizmadia/PyDotNet/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/zcsizmadia/PyDotNet/compare/v0.9.0...v1.0.0
