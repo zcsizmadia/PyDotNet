@@ -17,6 +17,8 @@ previously published version, and the build fails on an unintended breaking API 
   3.15 but publishes its wheels only on PyTorch's own index so far, so CI installs it from
   `https://download.pytorch.org/whl/cpu` on that version.
   ([#43](https://github.com/zcsizmadia/PyDotNet/issues/43))
+- The free-threaded CI job runs both 3.14t and 3.15t, so the newest free-threaded build is
+  covered as well as the first officially supported one.
 
 ## [1.3.0] — 2026-09-04
 

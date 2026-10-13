@@ -256,11 +256,20 @@ jobs:
   # asserted IsGilEnabled == true, which is the standard-build answer.
   #
   # Kept out of the matrix and non-blocking because wheels for free-threaded builds lag, so
-  # the plugin test projects cannot run. The lifecycle suite needs only the standard library, and it is what covers the runtime differences —
-  # including the GIL detection this job exists to verify.
+  # the plugin test projects cannot run. The lifecycle suite needs only the standard
+  # library, and it is what covers the runtime differences — including the GIL detection
+  # this job exists to verify.
+  #
+  # Both free-threaded releases run: 3.14 is the first where the build is officially
+  # supported (PEP 779), and 3.15 is the newest.
   free-threaded:
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.14t', '3.15t']
+
     runs-on: ubuntu-latest
-    name: Build - Python 3.14 free-threaded (informational)
+    name: Build - Python ${{ matrix.python-version }} free-threaded (informational)
     continue-on-error: true
 
     steps:
@@ -274,10 +283,10 @@ jobs:
             9.0.x
             10.0.x
 
-      - name: Set up free-threaded Python 3.14
+      - name: Set up free-threaded Python ${{ matrix.python-version }}
         uses: actions/setup-python@v7
         with:
-          python-version: '3.14t'
+          python-version: ${{ matrix.python-version }}
           update-environment: true
 
       - name: Confirm this really is a free-threaded build

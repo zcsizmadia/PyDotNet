@@ -1592,7 +1592,7 @@ dotnet format
 | Linux (Ubuntu) | x64 | 3.11, 3.12, 3.13, 3.14, 3.15 | Tested in CI |
 | Linux (Ubuntu) | arm64 | 3.11, 3.12, 3.13, 3.14, 3.15 | Tested in CI |
 | macOS | Apple Silicon | 3.11, 3.12, 3.13, 3.14, 3.15 | Tested in CI |
-| Linux (Ubuntu) | x64 | 3.14 free-threaded | Informational job |
+| Linux (Ubuntu) | x64 | 3.14, 3.15 free-threaded | Informational job |
 | Windows | arm64 | 3.13 | Informational job |
 
 Intel macOS is not covered by CI. PyTorch no longer publishes macOS x86_64 wheels, so `PyDotNet.Torch` cannot be exercised there; the core library is expected to work but is untested on that platform.
@@ -1701,7 +1701,7 @@ many .NET threads serialises. There are two routes out, and which one PyDotNet s
 is genuinely open.
 
 **Free-threading** ([PEP 703](https://peps.python.org/pep-0703/)) removes the GIL from the
-interpreter itself. PyDotNet already runs the free-threaded 3.14t build in CI and
+interpreter itself. PyDotNet already runs the free-threaded 3.14t and 3.15t builds in CI and
 `PyRuntime.IsGilEnabled` already reports which kind of interpreter was loaded, so this route needs
 **no API change at all** — existing code becomes parallel by running against a free-threaded
 interpreter.
