@@ -153,6 +153,11 @@ Python must be installed **with its shared library** and be discoverable. See [C
 > [Virtual environments and isolation](docs/virtual-environments.md#python-version-support).
 > For `PyDotNet.Torch` on 3.15, install torch from PyTorch's index — its 3.15 wheels are not
 > on PyPI yet: `pip install torch --index-url https://download.pytorch.org/whl/cpu`.
+> On **macOS and Windows**, torch 2.14.1 for 3.15 crashes when it is used from any thread
+> other than Python's main thread, which reproduces in plain Python with no .NET involved.
+> PyDotNet calls into Python from .NET threads, so `PyDotNet.Torch` is not usable on those
+> platforms with 3.15 until a fixed torch ships, and CI skips its tests there. Linux is
+> unaffected.
 
 **Linux** — install the shared-library package (not just the interpreter):
 ```bash

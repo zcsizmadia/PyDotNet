@@ -70,31 +70,45 @@ jobs:
             python -m pip install torch
           fi
 
-      # Runs autograd in plain Python, outside PyDotNet, so a crash in torch itself is not
-      # mistaken for an embedding bug. backward() is what starts torch's autograd worker
-      # threads, and it runs both on the main thread and on a second one, because PyDotNet
-      # calls into Python from .NET thread-pool threads. Non-blocking: the Test step still
-      # runs, and comparing the two is the point.
+      # Exercises torch in plain Python, outside PyDotNet, on the main thread and on a second
+      # one. The second matters: PyDotNet calls into Python from .NET threads, never from
+      # the thread that would be Python's main thread.
+      #
+      # torch 2.14.1 for Python 3.15 on macOS and Windows segfaults on the second thread at
+      # its first tensor operation, inside pybind11's gil_scoped_acquire. That is a torch
+      # bug, not an embedding one: this script reproduces it with no .NET involved. On 3.15
+      # alone a crash here uninstalls torch, so the PyDotNet.Torch tests skip and the Torch
+      # sample is left out rather than taking the test host down. Once a fixed torch ships,
+      # the check passes and the tests resume by themselves. On every other version a crash
+      # fails the job as before.
       - name: Torch smoke check
         shell: bash
-        continue-on-error: true
         env:
           PYTHONFAULTHANDLER: "1"
         run: |
-          python - <<'PY'
+          if ! python - <<'PY'
           import threading, torch
 
-          def backward(where):
+          def compute(where):
               x = torch.ones(3, requires_grad=True)
               (x * x).sum().backward()
               print(f"{where}: grad={x.grad.tolist()}", flush=True)
 
           print("torch", torch.__version__, flush=True)
-          backward("main thread")
-          t = threading.Thread(target=backward, args=("worker thread",))
+          compute("main thread")
+          t = threading.Thread(target=compute, args=("second thread",))
           t.start()
           t.join()
           PY
+          then
+            if [ "${{ matrix.python-version }}" = "3.15" ]; then
+              echo "::warning::torch crashes on a non-main thread on this platform with Python 3.15 (upstream bug). Uninstalling it so the PyDotNet.Torch tests skip."
+              python -m pip uninstall -y torch
+            else
+              echo "::error::torch failed its smoke check."
+              exit 1
+            fi
+          fi
 
       - name: Build
         shell: bash
@@ -256,6 +270,12 @@ jobs:
           PYTHONUTF8: "1"
         run: |
           for proj in samples/*/; do
+            # The Torch sample exits non-zero without torch, which is absent only where the
+            # smoke check removed it (Python 3.15, see above).
+            if [ "$(basename "$proj")" = "PyDotNet.Sample.Torch" ] && ! python -c "import torch" 2>/dev/null; then
+              echo "--- Skipping $(basename "$proj"): torch is not installed ---"
+              continue
+            fi
             echo "--- Running $(basename "$proj") ---"
             dotnet run -c Release --no-build --project "$proj"
           done
