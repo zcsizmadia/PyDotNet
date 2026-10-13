@@ -930,7 +930,7 @@ public static class PyRuntime
 
             result.AddRange(
                 _packageDirectoryNames
-                    .Select(subDir => Path.Combine(dir, subDir))
+                    .Select(subDir => Path.Join(dir, subDir))
                     .Where(Directory.Exists));
         }
 

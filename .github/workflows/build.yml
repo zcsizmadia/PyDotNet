@@ -70,6 +70,10 @@ jobs:
             python -m pip install torch
           fi
 
+          # Fails fast, and separately from the test run, if torch itself cannot run on
+          # this interpreter, so a broken wheel is not mistaken for an embedding bug.
+          PYTHONFAULTHANDLER=1 python -c "import torch; print('torch', torch.__version__, torch.ones(3).sum().item())"
+
       - name: Build
         shell: bash
         run: |
@@ -78,8 +82,12 @@ jobs:
 
       # Coverage is collected on one leg only. It is the same test run either way, so
       # measuring everywhere would multiply the cost by twenty for identical numbers.
+      # PYTHONFAULTHANDLER makes a native crash inside Python print the Python stack before
+      # the process dies. Without it a segfault in a test host shows only "exit code 139".
       - name: Test
         shell: bash
+        env:
+          PYTHONFAULTHANDLER: "1"
         run: |
           if [ "${{ matrix.pack-nupkg }}" = "true" ]; then
             dotnet test -c Release --no-build -- --coverage --coverage-output-format cobertura
