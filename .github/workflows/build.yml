@@ -70,9 +70,31 @@ jobs:
             python -m pip install torch
           fi
 
-          # Fails fast, and separately from the test run, if torch itself cannot run on
-          # this interpreter, so a broken wheel is not mistaken for an embedding bug.
-          PYTHONFAULTHANDLER=1 python -c "import torch; print('torch', torch.__version__, torch.ones(3).sum().item())"
+      # Runs autograd in plain Python, outside PyDotNet, so a crash in torch itself is not
+      # mistaken for an embedding bug. backward() is what starts torch's autograd worker
+      # threads, and it runs both on the main thread and on a second one, because PyDotNet
+      # calls into Python from .NET thread-pool threads. Non-blocking: the Test step still
+      # runs, and comparing the two is the point.
+      - name: Torch smoke check
+        shell: bash
+        continue-on-error: true
+        env:
+          PYTHONFAULTHANDLER: "1"
+        run: |
+          python - <<'PY'
+          import threading, torch
+
+          def backward(where):
+              x = torch.ones(3, requires_grad=True)
+              (x * x).sum().backward()
+              print(f"{where}: grad={x.grad.tolist()}", flush=True)
+
+          print("torch", torch.__version__, flush=True)
+          backward("main thread")
+          t = threading.Thread(target=backward, args=("worker thread",))
+          t.start()
+          t.join()
+          PY
 
       - name: Build
         shell: bash
