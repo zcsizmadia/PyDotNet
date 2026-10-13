@@ -853,6 +853,10 @@ public static class PyRuntime
         ? StringComparison.OrdinalIgnoreCase
         : StringComparison.Ordinal;
 
+    // Debian/Ubuntu use "dist-packages" instead of "site-packages"; both are probed so
+    // DeriveDefaultSysPaths works across all distros.
+    private static readonly string[] _packageDirectoryNames = ["site-packages", "dist-packages"];
+
     /// <summary>
     /// On Linux/macOS, the Python shared library lives in <c>{home}/lib/</c>.
     /// Returns the <c>site-packages</c> directories under that home so that
@@ -924,16 +928,10 @@ public static class PyRuntime
                 continue;
             }
 
-            // Debian/Ubuntu use "dist-packages" instead of "site-packages";
-            // add both so the function works across all distros.
-            foreach (var subDir in new[] { "site-packages", "dist-packages" })
-            {
-                var packagesDir = Path.Combine(dir, subDir);
-                if (Directory.Exists(packagesDir))
-                {
-                    result.Add(packagesDir);
-                }
-            }
+            result.AddRange(
+                _packageDirectoryNames
+                    .Select(subDir => Path.Combine(dir, subDir))
+                    .Where(Directory.Exists));
         }
 
         return result;

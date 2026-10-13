@@ -131,6 +131,13 @@ public static class PythonLibraryLocator
             return rawPath;
         }
 
+        // Only a bare filename is searched for below. A rooted path that does not exist is
+        // simply missing, and joining it onto a search directory would not change that.
+        if (Path.IsPathRooted(rawPath))
+        {
+            return null;
+        }
+
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
             // rawPath may be just a filename — search arch-specific dir first, then common dirs.
@@ -144,7 +151,7 @@ public static class PythonLibraryLocator
             dirs.AddRange(["/usr/lib", "/usr/local/lib", "/usr/lib64"]);
 
             var candidate = dirs
-                .Select(dir => Path.Combine(dir, rawPath))
+                .Select(dir => Path.Join(dir, rawPath))
                 .FirstOrDefault(File.Exists);
 
             if (candidate is not null)
@@ -161,7 +168,7 @@ public static class PythonLibraryLocator
                 : ["/usr/local/lib", "/opt/homebrew/lib", "/Library/Frameworks/Python.framework/Versions/Current/lib"];
 
             var candidate = dirs
-                .Select(dir => Path.Combine(dir, rawPath))
+                .Select(dir => Path.Join(dir, rawPath))
                 .FirstOrDefault(File.Exists);
 
             if (candidate is not null)
