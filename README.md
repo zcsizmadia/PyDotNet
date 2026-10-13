@@ -21,7 +21,7 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 [![API docs](https://img.shields.io/badge/API_docs-zcsizmadia.github.io-2A6DB0)](https://zcsizmadia.github.io/PyDotNet/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![.NET: 8 | 9 | 10](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010-purple)
-![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14%20%7C%203.15--rc-blue)
+![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14%20%7C%203.15-blue)
 
 ---
 
@@ -147,12 +147,17 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 
 Python must be installed **with its shared library** and be discoverable. See [Configuration](#configuration) for the manual override.
 
-> **Python 3.15** is supported and verified against 3.15.0rc2, but it is still a release
-> candidate (final: 2026-10-01). CI runs it as an informational job that cannot fail the
-> build, because most third-party wheels — `pyarrow`, `matplotlib`, `torch` — do not exist
-> for it yet. 3.11 through 3.14 are the versions the build enforces. PyDotNet picks its
-> interpreter configuration mechanism per version automatically; see
+> **Python 3.15** is fully supported and part of the enforced CI matrix alongside 3.11
+> through 3.14. PyDotNet picks its interpreter configuration mechanism per version
+> automatically; see
 > [Virtual environments and isolation](docs/virtual-environments.md#python-version-support).
+> For `PyDotNet.Torch` on 3.15, install torch from PyTorch's index — its 3.15 wheels are not
+> on PyPI yet: `pip install torch --index-url https://download.pytorch.org/whl/cpu`.
+> On **macOS and Windows**, torch 2.14.1 for 3.15 crashes when it is used from any thread
+> other than Python's main thread, which reproduces in plain Python with no .NET involved.
+> PyDotNet calls into Python from .NET threads, so `PyDotNet.Torch` is not usable on those
+> platforms with 3.15 until a fixed torch ships, and CI skips its tests there. Linux is
+> unaffected.
 
 **Linux** — install the shared-library package (not just the interpreter):
 ```bash
@@ -1588,21 +1593,18 @@ dotnet format
 
 | OS | Architecture | Python versions | Status |
 |---|---|---|---|
-| Windows | x64 | 3.11, 3.12, 3.13, 3.14 | Tested in CI |
-| Linux (Ubuntu) | x64 | 3.11, 3.12, 3.13, 3.14 | Tested in CI |
-| Linux (Ubuntu) | arm64 | 3.11, 3.12, 3.13, 3.14 | Tested in CI |
-| macOS | Apple Silicon | 3.11, 3.12, 3.13, 3.14 | Tested in CI |
-| Linux (Ubuntu) | x64 | 3.15 (release candidate) | Informational job — see below |
-| Linux (Ubuntu) | x64 | 3.14 free-threaded | Informational job |
+| Windows | x64 | 3.11, 3.12, 3.13, 3.14, 3.15 | Tested in CI |
+| Linux (Ubuntu) | x64 | 3.11, 3.12, 3.13, 3.14, 3.15 | Tested in CI |
+| Linux (Ubuntu) | arm64 | 3.11, 3.12, 3.13, 3.14, 3.15 | Tested in CI |
+| macOS | Apple Silicon | 3.11, 3.12, 3.13, 3.14, 3.15 | Tested in CI |
+| Linux (Ubuntu) | x64 | 3.14, 3.15 free-threaded | Informational job |
 | Windows | arm64 | 3.13 | Informational job |
 
 Intel macOS is not covered by CI. PyTorch no longer publishes macOS x86_64 wheels, so `PyDotNet.Torch` cannot be exercised there; the core library is expected to work but is untested on that platform.
 
 Windows arm64 runs as an informational job rather than a full matrix leg, for the same reason: `pyarrow` and `torch` publish no `win_arm64` wheels, so those plugin tests cannot run there. `numpy`, `pandas` and `matplotlib` do, so the gap may close on its own. The job covers what actually differs between platforms — locating and loading `libpython`, and configuring the interpreter.
 
-Python 3.15 runs as a separate job that cannot fail the build. Most third-party wheels do not exist for it yet — `pyarrow`, `matplotlib` and `torch` are all absent at 3.15.0rc2 — so only the interpreter lifecycle suite runs there, covering initialization, virtual environment activation, and isolation. It moves into the matrix once 3.15 is final and the wheels have caught up.
-
-CI runs the full test suite across all three .NET TFMs (net8.0, net9.0, net10.0) and all four supported Python versions on every push.
+CI runs the full test suite across all three .NET TFMs (net8.0, net9.0, net10.0) and all five supported Python versions on every push.
 
 ---
 
@@ -1704,7 +1706,7 @@ many .NET threads serialises. There are two routes out, and which one PyDotNet s
 is genuinely open.
 
 **Free-threading** ([PEP 703](https://peps.python.org/pep-0703/)) removes the GIL from the
-interpreter itself. PyDotNet already runs the free-threaded 3.14t build in CI and
+interpreter itself. PyDotNet already runs the free-threaded 3.14t and 3.15t builds in CI and
 `PyRuntime.IsGilEnabled` already reports which kind of interpreter was loaded, so this route needs
 **no API change at all** — existing code becomes parallel by running against a free-threaded
 interpreter.
@@ -1796,7 +1798,6 @@ Independent of the items above, and each small enough to land on its own:
 
 | | |
 |---|---|
-| **Python 3.15 in the enforced matrix** | 3.15 is verified and runs as an informational job. Promoting it waits on third-party wheels — `pyarrow`, `matplotlib` and `torch` have none yet. Tracked in [#43](https://github.com/zcsizmadia/PyDotNet/issues/43) |
 | **Interpreter restart** | `Py_Finalize` is deliberately never called, so a process gets one interpreter configuration for its lifetime. Investigated in [#61](https://github.com/zcsizmadia/PyDotNet/issues/61): finalizing is viable on current CPython, but a C extension cannot be re-imported afterwards (`cannot load module more than once per process`), so a general restart would fail on the first real workload |
 | **Cancelling an async callback from Python** | Cancelling the future stops the `await`, but the .NET task runs on with its result discarded. Propagating cancellation into a `CancellationToken` parameter is tracked in [#98](https://github.com/zcsizmadia/PyDotNet/issues/98) |
 | **DataFrame reshaping** | apply/map, pivot, window and rolling functions, and multi-index operations remain unwrapped |

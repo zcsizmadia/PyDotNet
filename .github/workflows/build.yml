@@ -24,7 +24,7 @@ jobs:
         # would diverge its test environment from every other job, and PyDotNet.Torch
         # cannot work there regardless.
         os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-latest]
-        python-version: ['3.11', '3.12', '3.13', '3.14']
+        python-version: ['3.11', '3.12', '3.13', '3.14', '3.15']
 
         include:
           - os: ubuntu-latest
@@ -56,8 +56,59 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           # polars-lts-cpu has x86_64 wheels only; fall back to polars on ARM64.
-          python -m pip install numpy pandas pyarrow torch matplotlib
+          python -m pip install numpy pandas pyarrow matplotlib
           pip install polars-lts-cpu || pip install polars
+
+          # torch 2.14.1 supports Python 3.15, but its cp315 wheels are published only on
+          # PyTorch's own index; the PyPI release stops at cp314, so a plain install finds
+          # nothing. 3.15 therefore takes torch from the CPU index. The other versions stay
+          # on PyPI so their test environment is unchanged. Drop the exception once PyPI
+          # carries cp315 wheels.
+          if [ "${{ matrix.python-version }}" = "3.15" ]; then
+            python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          else
+            python -m pip install torch
+          fi
+
+      # Exercises torch in plain Python, outside PyDotNet, on the main thread and on a second
+      # one. The second matters: PyDotNet calls into Python from .NET threads, never from
+      # the thread that would be Python's main thread.
+      #
+      # torch 2.14.1 for Python 3.15 on macOS and Windows segfaults on the second thread at
+      # its first tensor operation, inside pybind11's gil_scoped_acquire. That is a torch
+      # bug, not an embedding one: this script reproduces it with no .NET involved. On 3.15
+      # alone a crash here uninstalls torch, so the PyDotNet.Torch tests skip and the Torch
+      # sample is left out rather than taking the test host down. Once a fixed torch ships,
+      # the check passes and the tests resume by themselves. On every other version a crash
+      # fails the job as before.
+      - name: Torch smoke check
+        shell: bash
+        env:
+          PYTHONFAULTHANDLER: "1"
+        run: |
+          if ! python - <<'PY'
+          import threading, torch
+
+          def compute(where):
+              x = torch.ones(3, requires_grad=True)
+              (x * x).sum().backward()
+              print(f"{where}: grad={x.grad.tolist()}", flush=True)
+
+          print("torch", torch.__version__, flush=True)
+          compute("main thread")
+          t = threading.Thread(target=compute, args=("second thread",))
+          t.start()
+          t.join()
+          PY
+          then
+            if [ "${{ matrix.python-version }}" = "3.15" ]; then
+              echo "::warning::torch crashes on a non-main thread on this platform with Python 3.15 (upstream bug). Uninstalling it so the PyDotNet.Torch tests skip."
+              python -m pip uninstall -y torch
+            else
+              echo "::error::torch failed its smoke check."
+              exit 1
+            fi
+          fi
 
       - name: Build
         shell: bash
@@ -66,9 +117,13 @@ jobs:
           dotnet build -c Release --no-restore
 
       # Coverage is collected on one leg only. It is the same test run either way, so
-      # measuring everywhere would multiply the cost by sixteen for identical numbers.
+      # measuring everywhere would multiply the cost by twenty for identical numbers.
+      # PYTHONFAULTHANDLER makes a native crash inside Python print the Python stack before
+      # the process dies. Without it a segfault in a test host shows only "exit code 139".
       - name: Test
         shell: bash
+        env:
+          PYTHONFAULTHANDLER: "1"
         run: |
           if [ "${{ matrix.pack-nupkg }}" = "true" ]; then
             dotnet test -c Release --no-build -- --coverage --coverage-output-format cobertura
@@ -215,6 +270,12 @@ jobs:
           PYTHONUTF8: "1"
         run: |
           for proj in samples/*/; do
+            # The Torch sample exits non-zero without torch, which is absent only where the
+            # smoke check removed it (Python 3.15, see above).
+            if [ "$(basename "$proj")" = "PyDotNet.Sample.Torch" ] && ! python -c "import torch" 2>/dev/null; then
+              echo "--- Skipping $(basename "$proj"): torch is not installed ---"
+              continue
+            fi
             echo "--- Running $(basename "$proj") ---"
             dotnet run -c Release --no-build --project "$proj"
           done
@@ -240,141 +301,25 @@ jobs:
             # sits alongside the package it belongs to.
             nupkgs/*.snupkg
 
-  # Python 3.15 is still a release candidate (final: 2026-10-01), so it is kept out of the
-  # matrix above and cannot fail the build. Two reasons, both temporary:
-  #
-  #   * Third-party wheels lag a new release. At 3.15.0rc2 numpy and polars are available
-  #     but pandas, pyarrow, matplotlib and torch are not, so the plugin test projects
-  #     cannot run at all. For 3.14 the last of these (pyarrow) landed 17 days after the
-  #     final release, so the wait here is likely to outlast 3.15 GA on 2026-10-01.
-  #   * A release candidate can change under us, and that should not block an unrelated
-  #     pull request.
-  #
-  # What it does cover is exactly what changes between versions: interpreter configuration.
-  # 3.15 removed Py_SetProgramName and the isolation globals from the headers, so this job
-  # is what proves PyDotNet still initializes, activates a virtual environment, and applies
-  # isolation there — via PyInitConfig (PEP 741) rather than the legacy symbols.
-  #
-  # Promote this into the matrix once 3.15 is final and the wheels have caught up.
-  prerelease:
-    runs-on: ubuntu-latest
-    name: Build - Python 3.15 (prerelease, informational)
-    continue-on-error: true
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install .NET SDKs
-        uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: |
-            8.0.x
-            9.0.x
-            10.0.x
-
-      - name: Set up Python 3.15
-        uses: actions/setup-python@v7
-        with:
-          python-version: '3.15'
-          allow-prereleases: true
-          update-environment: true
-
-      # Nothing below this point needs a third-party package: the lifecycle suite depends
-      # only on the standard library. This step exists purely to record when the ecosystem
-      # has caught up enough for 3.15 to join the matrix.
-      #
-      # --only-binary and --dry-run are load-bearing, not tidiness. Without them pip
-      # responds to a missing wheel by fetching the sdist and building it — pyarrow and
-      # matplotlib are large C++ builds and torch is enormous — or by backtracking through
-      # hundreds of releases hunting for a compatible one. Either takes tens of minutes.
-      # The timeout is a backstop in case a future pip finds another way to be slow.
-      - name: Report interpreter and wheel availability
-        shell: bash
-        run: |
-          python -VV
-          python -m pip install --upgrade pip
-
-          for pkg in numpy pandas polars pyarrow matplotlib torch; do
-            if timeout 90 python -m pip install --only-binary=:all: --dry-run --quiet "$pkg" 2>/dev/null; then
-              echo "  available  $pkg"
-            else
-              echo "  missing    $pkg (no 3.15 wheel yet)"
-            fi
-          done
-
-      - name: Build
-        shell: bash
-        run: |
-          dotnet restore
-          dotnet build -c Release --no-restore
-
-      # Only the lifecycle project runs. It depends on nothing beyond the standard library,
-      # so a failure here is a genuine incompatibility rather than a missing wheel.
-      - name: Test interpreter lifecycle
-        shell: bash
-        run: |
-          dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build
-
-      - name: Test virtual environment activation
-        shell: bash
-        run: |
-          VENV="${RUNNER_TEMP}/pydotnet-test-venv"
-          python -m venv "$VENV"
-          VENV_PY="$VENV/bin/python"
-          SITE_PACKAGES=$("$VENV_PY" -c "import sysconfig; print(sysconfig.get_paths()['purelib'])")
-          echo "MARKER = 'pydotnet'" > "$SITE_PACKAGES/pydotnet_venv_marker.py"
-
-          if python -c "import pydotnet_venv_marker" 2>/dev/null; then
-            echo "::error::Marker module leaked into the base interpreter; the test would prove nothing."
-            exit 1
-          fi
-
-          PYDOTNET_TEST_VENV="$VENV" dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build \
-            -- --treenode-filter "/*/*/VirtualEnvironmentActivation/*"
-
-      - name: Test interpreter isolation
-        shell: bash
-        env:
-          PYDOTNET_TEST_ISOLATION: "1"
-        run: |
-          dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build \
-            -- --treenode-filter "/*/*/IsolationActivation/*"
-
-      # sys.path placement, discovered the same way as in the main matrix job. The
-      # prerelease job carried the venv and isolation gated steps but not this one, so
-      # neither placement was exercised against upcoming Python versions.
-      - name: Test sys.path placement
-        shell: bash
-        env:
-          PYDOTNET_TEST_SYSPATH: "1"
-        run: |
-          cd tests/PyDotNet.Lifecycle.Tests
-
-          TESTS=$(dotnet run -c Release --no-build -f net10.0 -- \
-                    --list-tests --treenode-filter "/*/*/SysPathPlacementTests/*" \
-                  | sed -n 's/^  \([A-Za-z_][A-Za-z0-9_]*\)$/\1/p')
-
-          if [ -z "$TESTS" ]; then
-            echo "::error::Discovered no SysPathPlacementTests. The filter or the class name has changed."
-            exit 1
-          fi
-
-          for test in $TESTS; do
-            echo "--- $test ---"
-            dotnet test -c Release --no-build -- --treenode-filter "/*/*/SysPathPlacementTests/$test"
-          done
-
   # Free-threaded (no-GIL) CPython, which the requirements table advertises as supported.
   # Until now nothing exercised it: PyRuntime.DetectGilEnabled existed but the only test
   # asserted IsGilEnabled == true, which is the standard-build answer.
   #
-  # Kept out of the matrix and non-blocking for the same reason as the 3.15 job: wheels for
-  # free-threaded builds lag, so the plugin test projects cannot run. The lifecycle suite
-  # needs only the standard library, and it is what covers the runtime differences —
-  # including the GIL detection this job exists to verify.
+  # Kept out of the matrix and non-blocking because wheels for free-threaded builds lag, so
+  # the plugin test projects cannot run. The lifecycle suite needs only the standard
+  # library, and it is what covers the runtime differences — including the GIL detection
+  # this job exists to verify.
+  #
+  # Both free-threaded releases run: 3.14 is the first where the build is officially
+  # supported (PEP 779), and 3.15 is the newest.
   free-threaded:
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.14t', '3.15t']
+
     runs-on: ubuntu-latest
-    name: Build - Python 3.14 free-threaded (informational)
+    name: Build - Python ${{ matrix.python-version }} free-threaded (informational)
     continue-on-error: true
 
     steps:
@@ -388,10 +333,10 @@ jobs:
             9.0.x
             10.0.x
 
-      - name: Set up free-threaded Python 3.14
+      - name: Set up free-threaded Python ${{ matrix.python-version }}
         uses: actions/setup-python@v7
         with:
-          python-version: '3.14t'
+          python-version: ${{ matrix.python-version }}
           update-environment: true
 
       - name: Confirm this really is a free-threaded build
