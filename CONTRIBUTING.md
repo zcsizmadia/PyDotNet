@@ -97,8 +97,8 @@ be present and still lose.
 ## Pull requests
 
 - One logical change per PR. Related fixes that share a code path are fine together.
-- CI must be green: 16 matrix jobs (4 operating systems × 4 Python versions) plus the gated
-  steps. The Python 3.15 and free-threaded jobs are informational and cannot block.
+- CI must be green: 20 matrix jobs (4 operating systems × 5 Python versions) plus the gated
+  steps. The free-threaded and Windows arm64 jobs are informational and cannot block.
 - Public API changes are validated against the last published version. An unintended break
   fails the build with `CP0002`; an intended one needs `PackageValidationBaselineVersion`
   raised in the release that carries it.

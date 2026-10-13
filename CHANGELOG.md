@@ -9,6 +9,15 @@ previously published version, and the build fails on an unintended breaking API 
 
 ## [Unreleased]
 
+### Changed
+
+- **Python 3.15 is in the enforced CI matrix.** 3.15.0 is final and every test dependency
+  now ships wheels for it, so 3.15 runs the full suite on all four operating systems
+  instead of the lifecycle-only informational job, which is removed. torch 2.14.1 supports
+  3.15 but publishes its wheels only on PyTorch's own index so far, so CI installs it from
+  `https://download.pytorch.org/whl/cpu` on that version.
+  ([#43](https://github.com/zcsizmadia/PyDotNet/issues/43))
+
 ## [1.3.0] — 2026-09-04
 
 ### Added

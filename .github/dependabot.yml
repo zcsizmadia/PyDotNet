@@ -6,6 +6,13 @@ updates:
       interval: "weekly"
       day: "sunday"
     open-pull-requests-limit: 25
+    # TUnit releases several times a week, and each bump arrived as its own PR. Grouping
+    # folds TUnit and its companion packages into one PR per weekly run.
+    groups:
+      tunit:
+        patterns:
+          - "TUnit"
+          - "TUnit.*"
 
   - package-ecosystem: "github-actions"
     directory: "/"
