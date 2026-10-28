@@ -13,16 +13,16 @@ previously published version, and the build fails on an unintended breaking API 
 
 - **Python 3.15 is in the enforced CI matrix.** 3.15.0 is final and every test dependency
   now ships wheels for it, so 3.15 runs the full suite on all four operating systems
-  instead of the lifecycle-only informational job, which is removed. torch 2.14.1 supports
-  3.15 but publishes its wheels only on PyTorch's own index so far, so CI installs it from
-  `https://download.pytorch.org/whl/cpu` on that version.
+  instead of the lifecycle-only informational job, which is removed.
   ([#43](https://github.com/zcsizmadia/PyDotNet/issues/43))
-- **Known issue: torch on Python 3.15 for macOS and Windows.** torch 2.14.1 segfaults there
-  as soon as a tensor is used from a thread other than Python's main thread — in plain
-  Python as much as under PyDotNet, which always calls from .NET threads. CI checks for the
-  crash before testing and, on 3.15 only, uninstalls torch when it occurs, so the
-  `PyDotNet.Torch` tests skip rather than taking the test host down. They resume
-  automatically once a fixed torch is published.
+- **`PyDotNet.Torch` on Python 3.15 needs torch 2.15 or later.** The torch 2.14.1 builds
+  for 3.15 segfault on macOS and Windows as soon as a tensor is used from a thread other
+  than Python's main thread — in plain Python as much as under PyDotNet, which always calls
+  from .NET threads. Fixed upstream in 2.15
+  ([pytorch/pytorch#200779](https://github.com/pytorch/pytorch/issues/200779)). CI now
+  runs torch on a second thread in plain Python before the tests, so a broken build fails
+  clearly instead of as a crashed test host.
+  ([#136](https://github.com/zcsizmadia/PyDotNet/issues/136))
 - The free-threaded CI job runs both 3.14t and 3.15t, so the newest free-threaded build is
   covered as well as the first officially supported one.
 
