@@ -74,9 +74,12 @@ The gate value must be exactly `1` — `0`, `false` and `off` all leave the fixt
 single method:
 
 ```bash
-PYDOTNET_TEST_SYSPATH=1 dotnet test --project tests/PyDotNet.Lifecycle.Tests \
+PYDOTNET_TEST_SYSPATH=1 dotnet test --project "$PWD/tests/PyDotNet.Lifecycle.Tests" \
   -- --treenode-filter "/*/*/SysPathPlacementTests/Prepend_TakesPrecedenceOverTheStandardLibrary"
 ```
+
+The project path is absolute on purpose: the .NET 11 SDK misresolves a relative one for a
+project with several target frameworks.
 
 Running the whole class at once is not a mistake you have to remember: the first test claims
 the process and the rest skip with a message saying so.
