@@ -8,11 +8,18 @@ updates:
     open-pull-requests-limit: 25
     # TUnit releases several times a week, and each bump arrived as its own PR. Grouping
     # folds TUnit and its companion packages into one PR per weekly run.
+    #
+    # The Microsoft.Extensions packages ship together in each .NET servicing release, so
+    # they are grouped too: one PR per release rather than one per package, which also
+    # stops their PRs from conflicting with each other in Directory.Packages.props.
     groups:
       tunit:
         patterns:
           - "TUnit"
           - "TUnit.*"
+      microsoft-extensions:
+        patterns:
+          - "Microsoft.Extensions.*"
 
   - package-ecosystem: "github-actions"
     directory: "/"
