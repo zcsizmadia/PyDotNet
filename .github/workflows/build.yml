@@ -56,37 +56,23 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           # polars-lts-cpu has x86_64 wheels only; fall back to polars on ARM64.
-          python -m pip install numpy pandas pyarrow matplotlib
+          python -m pip install numpy pandas pyarrow torch matplotlib
           pip install polars-lts-cpu || pip install polars
-
-          # torch 2.14.1 supports Python 3.15, but its cp315 wheels are published only on
-          # PyTorch's own index; the PyPI release stops at cp314, so a plain install finds
-          # nothing. 3.15 therefore takes torch from the CPU index. The other versions stay
-          # on PyPI so their test environment is unchanged. Drop the exception once PyPI
-          # carries cp315 wheels.
-          if [ "${{ matrix.python-version }}" = "3.15" ]; then
-            python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-          else
-            python -m pip install torch
-          fi
 
       # Exercises torch in plain Python, outside PyDotNet, on the main thread and on a second
       # one. The second matters: PyDotNet calls into Python from .NET threads, never from
       # the thread that would be Python's main thread.
       #
-      # torch 2.14.1 for Python 3.15 on macOS and Windows segfaults on the second thread at
-      # its first tensor operation, inside pybind11's gil_scoped_acquire. That is a torch
-      # bug, not an embedding one: this script reproduces it with no .NET involved. On 3.15
-      # alone a crash here uninstalls torch, so the PyDotNet.Torch tests skip and the Torch
-      # sample is left out rather than taking the test host down. Once a fixed torch ships,
-      # the check passes and the tests resume by themselves. On every other version a crash
-      # fails the job as before.
+      # It exists because torch 2.14.1 for Python 3.15 segfaulted on macOS and Windows at the
+      # first tensor operation on any non-main thread (pytorch/pytorch#200779, fixed in
+      # 2.15). Inside the test run that surfaced only as a test host dying with exit code
+      # 139; here a broken torch build fails loudly, before the tests, with no .NET involved.
       - name: Torch smoke check
         shell: bash
         env:
           PYTHONFAULTHANDLER: "1"
         run: |
-          if ! python - <<'PY'
+          python - <<'PY'
           import threading, torch
 
           def compute(where):
@@ -100,15 +86,6 @@ jobs:
           t.start()
           t.join()
           PY
-          then
-            if [ "${{ matrix.python-version }}" = "3.15" ]; then
-              echo "::warning::torch crashes on a non-main thread on this platform with Python 3.15 (upstream bug). Uninstalling it so the PyDotNet.Torch tests skip."
-              python -m pip uninstall -y torch
-            else
-              echo "::error::torch failed its smoke check."
-              exit 1
-            fi
-          fi
 
       - name: Build
         shell: bash
@@ -270,12 +247,6 @@ jobs:
           PYTHONUTF8: "1"
         run: |
           for proj in samples/*/; do
-            # The Torch sample exits non-zero without torch, which is absent only where the
-            # smoke check removed it (Python 3.15, see above).
-            if [ "$(basename "$proj")" = "PyDotNet.Sample.Torch" ] && ! python -c "import torch" 2>/dev/null; then
-              echo "--- Skipping $(basename "$proj"): torch is not installed ---"
-              continue
-            fi
             echo "--- Running $(basename "$proj") ---"
             dotnet run -c Release --no-build --project "$proj"
           done
