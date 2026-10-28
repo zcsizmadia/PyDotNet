@@ -53,7 +53,7 @@ Typed, idiomatic C# wrappers for popular Python libraries, built on the core run
 
 ## Supported versions
 
-.NET 8, 9 and 10 · CPython 3.11 through 3.15, standard or free-threaded builds ·
+.NET 8, 9, 10 and 11 · CPython 3.11 through 3.15, standard or free-threaded builds ·
 Windows, Linux (x64 and arm64), macOS (Apple Silicon)
 
 > The full narrative documentation — installation, quick start, marshaling, buffers,

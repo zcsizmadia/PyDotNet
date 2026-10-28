@@ -55,6 +55,7 @@ jobs:
             8.0.x
             9.0.x
             10.0.x
+            11.0.100-rc.3.26522.148
 
       - name: Install DocFX
         run: dotnet tool install -g docfx

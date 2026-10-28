@@ -40,6 +40,7 @@ jobs:
             8.0.x
             9.0.x
             10.0.x
+            11.0.100-rc.3.26522.148
 
       # Query selection and filtering live in the config file rather than here, so the
       # whole policy — which suite runs, and what is deliberately excluded from it — is

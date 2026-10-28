@@ -20,7 +20,7 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 [![NuGet](https://img.shields.io/nuget/v/PyDotNet.svg)](https://www.nuget.org/packages/PyDotNet)
 [![API docs](https://img.shields.io/badge/API_docs-zcsizmadia.github.io-2A6DB0)](https://zcsizmadia.github.io/PyDotNet/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-![.NET: 8 | 9 | 10](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010-purple)
+![.NET: 8 | 9 | 10 | 11](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010%20%7C%2011-purple)
 ![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14%20%7C%203.15-blue)
 
 ---
@@ -104,7 +104,7 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 | **Structured logging** | Plugs into `Microsoft.Extensions.Logging` |
 | **Diagnostics report** | `PyRuntime.WriteDiagnosticsReport()` prints which interpreter was actually resolved, `sys.path` in search order, and whether a virtual environment is really active |
 | **Hosting integration** | `services.AddPyDotNet()` handles startup, graceful drain, configuration binding, and an injectable `PyInterpreter` |
-| **Multi-targeting** | Targets .NET 8, .NET 9, and .NET 10 from a single NuGet package |
+| **Multi-targeting** | Targets .NET 8, .NET 9, .NET 10, and .NET 11 from a single NuGet package |
 
 ---
 
@@ -132,7 +132,7 @@ PyDotNet embeds CPython directly inside your .NET process. No subprocess, no soc
 - **Errors that survive the boundary** — Python exceptions arrive as types you can `catch`,
   carrying their cause chain, and a .NET exception thrown inside a callback becomes a Python
   exception rather than disappearing.
-- **Modern .NET** — targets net8.0 / net9.0 / net10.0 from a single package; built with
+- **Modern .NET** — targets net8.0 / net9.0 / net10.0 / net11.0 from a single package; built with
   `Nullable`, `TreatWarningsAsErrors`, and `AnalysisLevel=latest-recommended`.
 
 ---
@@ -1471,7 +1471,7 @@ int[] squares = await Task.WhenAll(tasks);
 
 | Tool | Minimum version | Notes |
 |---|---|---|
-| .NET SDK | 10.0 | Needed to build all three TFMs (net8.0, net9.0, net10.0) |
+| .NET SDK | 11.0 | Needed to build all four TFMs (net8.0, net9.0, net10.0, net11.0) |
 | Python | 3.11+ | Must include the shared library (see [Requirements](#requirements)) |
 | `numpy` | any | Integration tests |
 | `pandas` | any | Integration tests |
@@ -1601,7 +1601,7 @@ Intel macOS is not covered by CI. PyTorch no longer publishes macOS x86_64 wheel
 
 Windows arm64 runs as an informational job rather than a full matrix leg, for the same reason: `pyarrow` and `torch` publish no `win_arm64` wheels, so those plugin tests cannot run there. `numpy`, `pandas` and `matplotlib` do, so the gap may close on its own. The job covers what actually differs between platforms — locating and loading `libpython`, and configuring the interpreter.
 
-CI runs the full test suite across all three .NET TFMs (net8.0, net9.0, net10.0) and all five supported Python versions on every push.
+CI runs the full test suite across all four .NET TFMs (net8.0, net9.0, net10.0, net11.0) and all five supported Python versions on every push.
 
 ---
 

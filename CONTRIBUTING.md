@@ -7,7 +7,7 @@ PyDotNet — the rest is ordinary .NET work.
 
 | Tool | Version | Why |
 |---|---|---|
-| .NET SDK | 10.0 | The projects multi-target `net8.0`, `net9.0` and `net10.0`, so the newest SDK is needed to build them all |
+| .NET SDK | 11.0 | The projects multi-target `net8.0`, `net9.0`, `net10.0` and `net11.0`, so the newest SDK is needed to build them all |
 | Python | 3.11 – 3.15 | Must include the **shared library**, not just the interpreter |
 
 Python has to expose `libpython`/`python3xx.dll`. A stock python.org installer does; some

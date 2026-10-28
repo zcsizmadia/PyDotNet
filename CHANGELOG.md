@@ -9,6 +9,13 @@ previously published version, and the build fails on an unintended breaking API 
 
 ## [Unreleased]
 
+### Added
+
+- **.NET 11.** Every package now also targets `net11.0`, alongside `net8.0`, `net9.0` and
+  `net10.0`, and the full test suite runs on it across every operating system and Python
+  version in CI. Building the repository now needs the .NET 11 SDK; consuming the packages
+  does not. ([#150](https://github.com/zcsizmadia/PyDotNet/issues/150))
+
 ### Changed
 
 - **Python 3.15 is in the enforced CI matrix.** 3.15.0 is final and every test dependency
