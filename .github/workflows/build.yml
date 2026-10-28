@@ -199,7 +199,7 @@ jobs:
             exit 1
           fi
 
-          PYDOTNET_TEST_VENV="$VENV" dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build \
+          PYDOTNET_TEST_VENV="$VENV" dotnet test --project tests/PyDotNet.Lifecycle.Tests -c Release --no-build \
             -- --treenode-filter "/*/*/VirtualEnvironmentActivation/*"
 
       # The isolation flags are likewise consumed once, by Py_Initialize(), so this also
@@ -209,7 +209,7 @@ jobs:
         env:
           PYDOTNET_TEST_ISOLATION: "1"
         run: |
-          dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build \
+          dotnet test --project tests/PyDotNet.Lifecycle.Tests -c Release --no-build \
             -- --treenode-filter "/*/*/IsolationActivation/*"
 
       # sys.path is arranged once, during initialization, and these tests each configure it
@@ -335,7 +335,7 @@ jobs:
       - name: Test interpreter lifecycle
         shell: bash
         run: |
-          dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build
+          dotnet test --project tests/PyDotNet.Lifecycle.Tests -c Release --no-build
 
   # Windows on ARM64, which the requirements table claims but nothing tested.
   #
@@ -393,7 +393,7 @@ jobs:
       - name: Test interpreter lifecycle
         shell: bash
         run: |
-          dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build
+          dotnet test --project tests/PyDotNet.Lifecycle.Tests -c Release --no-build
 
       - name: Test virtual environment activation
         shell: bash
@@ -408,5 +408,5 @@ jobs:
             exit 1
           fi
 
-          PYDOTNET_TEST_VENV="$VENV" dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build \
+          PYDOTNET_TEST_VENV="$VENV" dotnet test --project tests/PyDotNet.Lifecycle.Tests -c Release --no-build \
             -- --treenode-filter "/*/*/VirtualEnvironmentActivation/*"

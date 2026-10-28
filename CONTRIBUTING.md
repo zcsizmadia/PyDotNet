@@ -74,7 +74,7 @@ The gate value must be exactly `1` — `0`, `false` and `off` all leave the fixt
 single method:
 
 ```bash
-PYDOTNET_TEST_SYSPATH=1 dotnet test tests/PyDotNet.Lifecycle.Tests \
+PYDOTNET_TEST_SYSPATH=1 dotnet test --project tests/PyDotNet.Lifecycle.Tests \
   -- --treenode-filter "/*/*/SysPathPlacementTests/Prepend_TakesPrecedenceOverTheStandardLibrary"
 ```
 
