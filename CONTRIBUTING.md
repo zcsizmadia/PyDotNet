@@ -7,7 +7,7 @@ PyDotNet — the rest is ordinary .NET work.
 
 | Tool | Version | Why |
 |---|---|---|
-| .NET SDK | 10.0 | The projects multi-target `net8.0`, `net9.0` and `net10.0`, so the newest SDK is needed to build them all |
+| .NET SDK | 11.0 | The projects multi-target `net8.0`, `net9.0`, `net10.0` and `net11.0`, so the newest SDK is needed to build them all |
 | Python | 3.11 – 3.15 | Must include the **shared library**, not just the interpreter |
 
 Python has to expose `libpython`/`python3xx.dll`. A stock python.org installer does; some
@@ -74,9 +74,12 @@ The gate value must be exactly `1` — `0`, `false` and `off` all leave the fixt
 single method:
 
 ```bash
-PYDOTNET_TEST_SYSPATH=1 dotnet test tests/PyDotNet.Lifecycle.Tests \
+PYDOTNET_TEST_SYSPATH=1 dotnet test --project "$PWD/tests/PyDotNet.Lifecycle.Tests" \
   -- --treenode-filter "/*/*/SysPathPlacementTests/Prepend_TakesPrecedenceOverTheStandardLibrary"
 ```
+
+The project path is absolute on purpose: the .NET 11 SDK misresolves a relative one for a
+project with several target frameworks.
 
 Running the whole class at once is not a mistake you have to remember: the first test claims
 the process and the rest skip with a message saying so.

@@ -44,6 +44,7 @@ jobs:
             8.0.x
             9.0.x
             10.0.x
+            11.0.100-rc.3.26522.148
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -182,6 +183,11 @@ jobs:
       # test on its own, in a dedicated process, against a purpose-built environment.
       # The marker module is written straight into site-packages rather than pip-installed
       # so that it cannot also be present in the base interpreter.
+      #
+      # This and the other single-project test steps pass an absolute project path. The
+      # .NET 11 SDK resolves a relative one against the project's own directory when the
+      # project has several target frameworks, so tests/PyDotNet.Lifecycle.Tests becomes
+      # tests/PyDotNet.Lifecycle.Tests/tests/PyDotNet.Lifecycle.Tests and the step fails.
       - name: Test virtual environment activation
         shell: bash
         run: |
@@ -198,7 +204,7 @@ jobs:
             exit 1
           fi
 
-          PYDOTNET_TEST_VENV="$VENV" dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build \
+          PYDOTNET_TEST_VENV="$VENV" dotnet test --project "$GITHUB_WORKSPACE/tests/PyDotNet.Lifecycle.Tests" -c Release --no-build \
             -- --treenode-filter "/*/*/VirtualEnvironmentActivation/*"
 
       # The isolation flags are likewise consumed once, by Py_Initialize(), so this also
@@ -208,7 +214,7 @@ jobs:
         env:
           PYDOTNET_TEST_ISOLATION: "1"
         run: |
-          dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build \
+          dotnet test --project "$GITHUB_WORKSPACE/tests/PyDotNet.Lifecycle.Tests" -c Release --no-build \
             -- --treenode-filter "/*/*/IsolationActivation/*"
 
       # sys.path is arranged once, during initialization, and these tests each configure it
@@ -303,6 +309,7 @@ jobs:
             8.0.x
             9.0.x
             10.0.x
+            11.0.100-rc.3.26522.148
 
       - name: Set up free-threaded Python ${{ matrix.python-version }}
         uses: actions/setup-python@v7
@@ -333,7 +340,7 @@ jobs:
       - name: Test interpreter lifecycle
         shell: bash
         run: |
-          dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build
+          dotnet test --project "$GITHUB_WORKSPACE/tests/PyDotNet.Lifecycle.Tests" -c Release --no-build
 
   # Windows on ARM64, which the requirements table claims but nothing tested.
   #
@@ -359,6 +366,7 @@ jobs:
             8.0.x
             9.0.x
             10.0.x
+            11.0.100-rc.3.26522.148
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -390,7 +398,7 @@ jobs:
       - name: Test interpreter lifecycle
         shell: bash
         run: |
-          dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build
+          dotnet test --project "$GITHUB_WORKSPACE/tests/PyDotNet.Lifecycle.Tests" -c Release --no-build
 
       - name: Test virtual environment activation
         shell: bash
@@ -405,5 +413,5 @@ jobs:
             exit 1
           fi
 
-          PYDOTNET_TEST_VENV="$VENV" dotnet test tests/PyDotNet.Lifecycle.Tests -c Release --no-build \
+          PYDOTNET_TEST_VENV="$VENV" dotnet test --project "$GITHUB_WORKSPACE/tests/PyDotNet.Lifecycle.Tests" -c Release --no-build \
             -- --treenode-filter "/*/*/VirtualEnvironmentActivation/*"
