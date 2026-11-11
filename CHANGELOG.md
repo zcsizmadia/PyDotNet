@@ -11,8 +11,8 @@ previously published version, and the build fails on an unintended breaking API 
 
 ### Added
 
-- **.NET 11.** Every package now also targets `net11.0`, alongside `net8.0`, `net9.0` and
-  `net10.0`, and the full test suite runs on it across every operating system and Python
+- **.NET 11.** Every package now also targets `net11.0`, alongside `net8.0` and `net10.0`,
+  and the full test suite runs on it across every operating system and Python
   version in CI. Building the repository now needs the .NET 11 SDK; consuming the packages
   does not. ([#150](https://github.com/zcsizmadia/PyDotNet/issues/150))
 
@@ -32,6 +32,13 @@ previously published version, and the build fails on an unintended breaking API 
   ([#136](https://github.com/zcsizmadia/PyDotNet/issues/136))
 - The free-threaded CI job runs both 3.14t and 3.15t, so the newest free-threaded build is
   covered as well as the first officially supported one.
+
+### Removed
+
+- **The `net9.0` target.** .NET 9 reached end of support on 2026-11-10, so the packages
+  now target `net8.0`, `net10.0` and `net11.0`. Applications on .NET 9 keep working:
+  NuGet gives them the `net8.0` assets.
+  ([#150](https://github.com/zcsizmadia/PyDotNet/issues/150))
 
 ## [1.3.0] — 2026-09-04
 

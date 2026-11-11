@@ -42,9 +42,8 @@ jobs:
         with:
           dotnet-version: |
             8.0.x
-            9.0.x
             10.0.x
-            11.0.100-rc.3.26522.148
+            11.0.x
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -307,9 +306,8 @@ jobs:
         with:
           dotnet-version: |
             8.0.x
-            9.0.x
             10.0.x
-            11.0.100-rc.3.26522.148
+            11.0.x
 
       - name: Set up free-threaded Python ${{ matrix.python-version }}
         uses: actions/setup-python@v7
@@ -364,9 +362,8 @@ jobs:
         with:
           dotnet-version: |
             8.0.x
-            9.0.x
             10.0.x
-            11.0.100-rc.3.26522.148
+            11.0.x
 
       - name: Set up Python
         uses: actions/setup-python@v7
