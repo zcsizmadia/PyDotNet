@@ -69,7 +69,7 @@ body:
     id: tfm
     attributes:
       label: Target framework
-      options: ["net8.0", "net9.0", "net10.0", "other"]
+      options: ["net8.0", "net10.0", "net11.0", "other"]
     validations:
       required: true
 

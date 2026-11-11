@@ -33,6 +33,7 @@ jobs:
         with:
           dotnet-version: |
             10.0.x
+            11.0.x
 
       - name: Resolve the tagged commit
         shell: bash

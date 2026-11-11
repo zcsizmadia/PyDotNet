@@ -257,4 +257,4 @@ All factory methods are `static` and return a new owned tensor.
 
 ## Supported frameworks
 
-`net8.0` · `net9.0` · `net10.0`
+`net8.0` · `net10.0` · `net11.0`
