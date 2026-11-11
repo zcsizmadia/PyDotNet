@@ -3,30 +3,48 @@ name: Release
 on:
   release:
     types: [published]
+  # Publishes an existing release again, from main's copy of this workflow. Re-running a
+  # failed release run cannot do that: a re-run uses the workflow file from the tagged
+  # commit, so a fix to this file never reaches it. Every check below still applies.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to publish, for example v1.4.0'
+        required: true
+        type: string
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name || inputs.tag }}
   cancel-in-progress: false  # Don't cancel releases in progress
 
 jobs:
   release:
     runs-on: ubuntu-latest
     name: Release
-    # This ensures the job only runs if the tag was created from the main branch
-    if: github.event.release.target_commitish == 'main'
+    # Releases are published from main only: a release must target main, and a manual run
+    # must be started from main (the tag itself is checked against main below).
+    if: >-
+      (github.event_name == 'release' && github.event.release.target_commitish == 'main') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     permissions:
       actions: read        # To download from build.yml
       contents: write      # To upload assets to the Release
       packages: write      # To push to GitHub Packages
-      id-token: write      # To sign the build provenance attestation
+      id-token: write      # To sign the provenance attestation, and for NuGet trusted publishing
       attestations: write  # To record it against the repository
+    env:
+      # Read from the environment in shell steps rather than interpolated into scripts, as
+      # a manual run's tag is free text.
+      TAG_NAME: ${{ github.event.release.tag_name || inputs.tag }}
 
     steps:
       # Check out the tagged commit itself, not the branch tip, so the SHA resolved below
-      # is the one being released.
+      # is the one being released. Full history, so a manual run can check the tag is on
+      # main.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ env.TAG_NAME }}
+          fetch-depth: 0
 
       - name: Install .NET SDKs
         uses: actions/setup-dotnet@v6
@@ -39,8 +57,12 @@ jobs:
         shell: bash
         run: |
           SHA="$(git rev-parse HEAD)"
+          if ! git merge-base --is-ancestor "$SHA" origin/main; then
+            echo "::error::$TAG_NAME ($SHA) is not on main."
+            exit 1
+          fi
           echo "TAG_SHA=$SHA" >> "$GITHUB_ENV"
-          echo "Releasing ${{ github.event.release.tag_name }} -> $SHA"
+          echo "Releasing $TAG_NAME -> $SHA"
 
       # Pinned to the tagged commit rather than "the newest successful build on main".
       #
@@ -67,8 +89,7 @@ jobs:
         shell: bash
         run: |
           # Get version from the tag (stripping 'v' prefix if present)
-          TAG_VERSION="${{ github.event.release.tag_name }}"
-          TAG_VERSION="${TAG_VERSION#v}"
+          TAG_VERSION="${TAG_NAME#v}"
 
           echo "Validating version: $TAG_VERSION"
 
@@ -138,15 +159,28 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           for NUPKG in $TARGET_NUPKGS; do
-            gh release upload ${{ github.event.release.tag_name }} "./nupkgs/$NUPKG.$TAG_VERSION.nupkg" --clobber
+            gh release upload "$TAG_NAME" "./nupkgs/$NUPKG.$TAG_VERSION.nupkg" --clobber
           done
+
+      # Trusted publishing: nuget.org exchanges this job's GitHub OIDC token for an API key
+      # that lasts an hour, so no long-lived key is stored in the repository to leak or
+      # expire. The matching policy on nuget.org names owner zcsizmadia, repository
+      # PyDotNet and workflow file release.yml. The key is requested right before the push
+      # because of its short lifetime.
+      - name: NuGet login (OIDC to a temporary API key)
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: zcsizmadia  # nuget.org profile name, not an email address
 
       - name: Publish to NuGet.org
         shell: bash
+        env:
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
         run: |
           for NUPKG in $TARGET_NUPKGS; do
             dotnet nuget push "./nupkgs/$NUPKG.$TAG_VERSION.nupkg" \
-              --api-key "${{ secrets.NUGET_API_KEY }}" \
+              --api-key "$NUGET_API_KEY" \
               --source https://api.nuget.org/v3/index.json \
               --skip-duplicate
           done
