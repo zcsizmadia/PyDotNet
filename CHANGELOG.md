@@ -9,6 +9,8 @@ previously published version, and the build fails on an unintended breaking API 
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-11-11
+
 ### Added
 
 - **.NET 11.** Every package now also targets `net11.0`, alongside `net8.0` and `net10.0`,
@@ -355,7 +357,8 @@ previously published version, and the build fails on an unintended breaking API 
 
 - First release.
 
-[Unreleased]: https://github.com/zcsizmadia/PyDotNet/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/zcsizmadia/PyDotNet/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/zcsizmadia/PyDotNet/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/zcsizmadia/PyDotNet/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/zcsizmadia/PyDotNet/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/zcsizmadia/PyDotNet/compare/v1.0.0...v1.1.0
