@@ -20,6 +20,13 @@ updates:
       microsoft-extensions:
         patterns:
           - "Microsoft.Extensions.*"
+    # Each Microsoft.Extensions major drops the oldest .NET it supported: 11.x no longer
+    # supports net8.0, which the libraries still target, and on Windows net8.0 falls back to
+    # netstandard2.0 assets that throw (EventLog). Stay on the newest major that covers every
+    # target framework; lift this when net8.0 is dropped from DefaultTargetFrameworks.
+    ignore:
+      - dependency-name: "Microsoft.Extensions.*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
